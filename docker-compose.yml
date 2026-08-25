@@ -1,0 +1,12 @@
+services:
+  engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: earchitect-engine
+
+    ports:
+      - "8001:8000"
+
+    restart: unless-stopped

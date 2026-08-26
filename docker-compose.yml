@@ -9,4 +9,16 @@ services:
     ports:
       - "8001:8000"
 
+    environment:
+      - ENGINE_ALLOWED_ORIGINS=*
+      - ENGINE_LOG_LEVEL=INFO
+      - ENGINE_VERSION=2.0.0
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
     restart: unless-stopped

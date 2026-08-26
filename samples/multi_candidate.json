@@ -1,0 +1,31 @@
+{
+  "plot": {
+    "points": [
+      {"x": 0, "y": 0},
+      {"x": 20, "y": 0},
+      {"x": 20, "y": 15},
+      {"x": 0, "y": 15}
+    ],
+    "facing": "north",
+    "road_side": "front",
+    "setback": 2.0
+  },
+  "rooms": [
+    {"type": "living", "count": 1, "min_area": 160},
+    {"type": "dining", "count": 1, "min_area": 100},
+    {"type": "kitchen", "count": 1, "min_area": 90},
+    {"type": "bedroom", "count": 2, "min_area": 130},
+    {"type": "toilet", "count": 2, "min_area": 40}
+  ],
+  "entrance": {
+    "side": "front",
+    "width": 1.2
+  },
+  "preferences": {
+    "parking": true,
+    "ventilation_priority": true,
+    "natural_light_priority": true
+  },
+  "candidate_count": 3,
+  "seed": 42
+}

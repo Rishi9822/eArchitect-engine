@@ -1,0 +1,867 @@
+﻿{
+    "layout":  {
+                   "id":  "layout_d1e59cc1a644",
+                   "version":  "1.0",
+                   "engine_version":  "2.0.0",
+                   "units":  "metric",
+                   "generation_time_ms":  30.69
+               },
+    "plot":  {
+                 "boundary":  [
+                                  {
+                                      "x":  0.0,
+                                      "y":  0.0
+                                  },
+                                  {
+                                      "x":  15.0,
+                                      "y":  0.0
+                                  },
+                                  {
+                                      "x":  18.0,
+                                      "y":  6.0
+                                  },
+                                  {
+                                      "x":  12.0,
+                                      "y":  14.0
+                                  },
+                                  {
+                                      "x":  0.0,
+                                      "y":  12.0
+                                  }
+                              ],
+                 "area_sqft":  2228.13,
+                 "area_sqm":  207.0,
+                 "facing":  "north",
+                 "road_side":  "front"
+             },
+    "buildable_area":  {
+                           "boundary":  [
+                                            {
+                                                "x":  2.0,
+                                                "y":  2.0
+                                            },
+                                            {
+                                                "x":  2.0,
+                                                "y":  10.3057
+                                            },
+                                            {
+                                                "x":  11.1295,
+                                                "y":  11.8273
+                                            },
+                                            {
+                                                "x":  15.6584,
+                                                "y":  5.7889
+                                            },
+                                            {
+                                                "x":  13.7639,
+                                                "y":  2.0
+                                            }
+                                        ],
+                           "area_sqft":  1184.21,
+                           "area_sqm":  110.017,
+                           "setback_m":  2.0
+                       },
+    "candidates":  [
+                       {
+                           "id":  "layout_d1e59cc1a644_c0",
+                           "strategy":  "balanced",
+                           "rooms":  [
+                                         {
+                                             "id":  "living_0",
+                                             "type":  "living",
+                                             "area_sqft":  258.51,
+                                             "area_sqm":  24.0165,
+                                             "polygon":  [
+                                                             {
+                                                                 "x":  2.0,
+                                                                 "y":  2.0
+                                                             },
+                                                             {
+                                                                 "x":  2.0,
+                                                                 "y":  7.4261
+                                                             },
+                                                             {
+                                                                 "x":  6.4261,
+                                                                 "y":  7.4261
+                                                             },
+                                                             {
+                                                                 "x":  6.4261,
+                                                                 "y":  2.0
+                                                             }
+                                                         ],
+                                             "centroid":  {
+                                                              "x":  4.2131,
+                                                              "y":  4.713
+                                                          },
+                                             "aspect_ratio":  1.226,
+                                             "zone":  "public",
+                                             "min_width_m":  4.426,
+                                             "min_length_m":  5.426,
+                                             "has_exterior_wall":  true,
+                                             "has_window":  true
+                                         },
+                                         {
+                                             "id":  "dining_0",
+                                             "type":  "dining",
+                                             "area_sqft":  154.77,
+                                             "area_sqm":  14.3785,
+                                             "polygon":  [
+                                                             {
+                                                                 "x":  2.0,
+                                                                 "y":  7.4261
+                                                             },
+                                                             {
+                                                                 "x":  2.0,
+                                                                 "y":  10.3057
+                                                             },
+                                                             {
+                                                                 "x":  6.4261,
+                                                                 "y":  11.0434
+                                                             },
+                                                             {
+                                                                 "x":  6.4261,
+                                                                 "y":  7.4261
+                                                             }
+                                                         ],
+                                             "centroid":  {
+                                                              "x":  4.2968,
+                                                              "y":  9.0573
+                                                          },
+                                             "aspect_ratio":  1.224,
+                                             "zone":  "public",
+                                             "min_width_m":  3.617,
+                                             "min_length_m":  4.426,
+                                             "has_exterior_wall":  true,
+                                             "has_window":  true
+                                         },
+                                         {
+                                             "id":  "bedroom_0",
+                                             "type":  "bedroom",
+                                             "area_sqft":  224.74,
+                                             "area_sqm":  20.8787,
+                                             "polygon":  [
+                                                             {
+                                                                 "x":  11.0423,
+                                                                 "y":  2.0
+                                                             },
+                                                             {
+                                                                 "x":  6.4261,
+                                                                 "y":  2.0
+                                                             },
+                                                             {
+                                                                 "x":  6.4261,
+                                                                 "y":  6.523
+                                                             },
+                                                             {
+                                                                 "x":  11.0423,
+                                                                 "y":  6.523
+                                                             }
+                                                         ],
+                                             "centroid":  {
+                                                              "x":  8.7342,
+                                                              "y":  4.2615
+                                                          },
+                                             "aspect_ratio":  1.021,
+                                             "zone":  "private",
+                                             "min_width_m":  4.523,
+                                             "min_length_m":  4.616,
+                                             "has_exterior_wall":  true,
+                                             "has_window":  true
+                                         },
+                                         {
+                                             "id":  "bedroom_1",
+                                             "type":  "bedroom",
+                                             "area_sqft":  183.93,
+                                             "area_sqm":  17.0877,
+                                             "polygon":  [
+                                                             {
+                                                                 "x":  15.1077,
+                                                                 "y":  6.523
+                                                             },
+                                                             {
+                                                                 "x":  15.6584,
+                                                                 "y":  5.7889
+                                                             },
+                                                             {
+                                                                 "x":  13.7639,
+                                                                 "y":  2.0
+                                                             },
+                                                             {
+                                                                 "x":  11.0423,
+                                                                 "y":  2.0
+                                                             },
+                                                             {
+                                                                 "x":  11.0423,
+                                                                 "y":  6.523
+                                                             }
+                                                         ],
+                                             "centroid":  {
+                                                              "x":  12.9731,
+                                                              "y":  4.4474
+                                                          },
+                                             "aspect_ratio":  1.021,
+                                             "zone":  "private",
+                                             "min_width_m":  4.523,
+                                             "min_length_m":  4.616,
+                                             "has_exterior_wall":  true,
+                                             "has_window":  true
+                                         },
+                                         {
+                                             "id":  "kitchen_0",
+                                             "type":  "kitchen",
+                                             "area_sqft":  136.45,
+                                             "area_sqm":  12.6769,
+                                             "polygon":  [
+                                                             {
+                                                                 "x":  10.1275,
+                                                                 "y":  9.9479
+                                                             },
+                                                             {
+                                                                 "x":  10.1275,
+                                                                 "y":  6.523
+                                                             },
+                                                             {
+                                                                 "x":  6.4261,
+                                                                 "y":  6.523
+                                                             },
+                                                             {
+                                                                 "x":  6.4261,
+                                                                 "y":  9.9479
+                                                             }
+                                                         ],
+                                             "centroid":  {
+                                                              "x":  8.2768,
+                                                              "y":  8.2354
+                                                          },
+                                             "aspect_ratio":  1.081,
+                                             "zone":  "service",
+                                             "min_width_m":  3.425,
+                                             "min_length_m":  3.701,
+                                             "has_exterior_wall":  false,
+                                             "has_window":  false
+                                         },
+                                         {
+                                             "id":  "toilet_0",
+                                             "type":  "toilet",
+                                             "area_sqft":  55.94,
+                                             "area_sqm":  5.1968,
+                                             "polygon":  [
+                                                             {
+                                                                 "x":  6.4261,
+                                                                 "y":  11.0434
+                                                             },
+                                                             {
+                                                                 "x":  10.1275,
+                                                                 "y":  11.6603
+                                                             },
+                                                             {
+                                                                 "x":  10.1275,
+                                                                 "y":  9.9479
+                                                             },
+                                                             {
+                                                                 "x":  6.4261,
+                                                                 "y":  9.9479
+                                                             }
+                                                         ],
+                                             "centroid":  {
+                                                              "x":  8.4124,
+                                                              "y":  10.6612
+                                                          },
+                                             "aspect_ratio":  2.161,
+                                             "zone":  "service",
+                                             "min_width_m":  1.712,
+                                             "min_length_m":  3.701,
+                                             "has_exterior_wall":  true,
+                                             "has_window":  true
+                                         },
+                                         {
+                                             "id":  "parking_0",
+                                             "type":  "parking",
+                                             "area_sqft":  169.88,
+                                             "area_sqm":  15.782,
+                                             "polygon":  [
+                                                             {
+                                                                 "x":  10.1275,
+                                                                 "y":  11.6603
+                                                             },
+                                                             {
+                                                                 "x":  11.1295,
+                                                                 "y":  11.8273
+                                                             },
+                                                             {
+                                                                 "x":  15.1077,
+                                                                 "y":  6.523
+                                                             },
+                                                             {
+                                                                 "x":  10.1275,
+                                                                 "y":  6.523
+                                                             }
+                                                         ],
+                                             "centroid":  {
+                                                              "x":  11.8509,
+                                                              "y":  8.5704
+                                                          },
+                                             "aspect_ratio":  1.065,
+                                             "zone":  "parking",
+                                             "min_width_m":  4.98,
+                                             "min_length_m":  5.304,
+                                             "has_exterior_wall":  true,
+                                             "has_window":  false
+                                         }
+                                     ],
+                           "walls":  [
+                                         {
+                                             "start":  {
+                                                           "x":  2.0,
+                                                           "y":  2.0
+                                                       },
+                                             "end":  {
+                                                         "x":  2.0,
+                                                         "y":  10.3057
+                                                     },
+                                             "type":  "exterior",
+                                             "thickness":  0.2286,
+                                             "length":  8.3057,
+                                             "bearing_deg":  0.0,
+                                             "orientation":  "vertical",
+                                             "room_a":  "living_0",
+                                             "room_b":  null,
+                                             "id":  "W001"
+                                         },
+                                         {
+                                             "start":  {
+                                                           "x":  2.0,
+                                                           "y":  7.4261
+                                                       },
+                                             "end":  {
+                                                         "x":  6.4261,
+                                                         "y":  7.4261
+                                                     },
+                                             "type":  "interior",
+                                             "thickness":  0.1143,
+                                             "length":  4.4261,
+                                             "bearing_deg":  90.0,
+                                             "orientation":  "horizontal",
+                                             "room_a":  "living_0",
+                                             "room_b":  "dining_0",
+                                             "id":  "W002"
+                                         },
+                                         {
+                                             "start":  {
+                                                           "x":  6.4261,
+                                                           "y":  9.9479
+                                                       },
+                                             "end":  {
+                                                         "x":  6.4261,
+                                                         "y":  9.9479
+                                                     },
+                                             "type":  "interior",
+                                             "thickness":  0.1143,
+                                             "length":  2.191,
+                                             "bearing_deg":  180.0,
+                                             "orientation":  "vertical",
+                                             "room_a":  "living_0",
+                                             "room_b":  "bedroom_0",
+                                             "id":  "W003"
+                                         },
+                                         {
+                                             "start":  {
+                                                           "x":  13.7639,
+                                                           "y":  2.0
+                                                       },
+                                             "end":  {
+                                                         "x":  2.0,
+                                                         "y":  2.0
+                                                     },
+                                             "type":  "exterior",
+                                             "thickness":  0.2286,
+                                             "length":  11.7639,
+                                             "bearing_deg":  270.0,
+                                             "orientation":  "horizontal",
+                                             "room_a":  "living_0",
+                                             "room_b":  null,
+                                             "id":  "W004"
+                                         },
+                                         {
+                                             "start":  {
+                                                           "x":  2.0,
+                                                           "y":  10.3057
+                                                       },
+                                             "end":  {
+                                                         "x":  11.1295,
+                                                         "y":  11.8273
+                                                     },
+                                             "type":  "exterior",
+                                             "thickness":  0.2286,
+                                             "length":  9.2554,
+                                             "bearing_deg":  80.5,
+                                             "orientation":  "horizontal",
+                                             "room_a":  "dining_0",
+                                             "room_b":  null,
+                                             "id":  "W005"
+                                         },
+                                         {
+                                             "start":  {
+                                                           "x":  10.1275,
+                                                           "y":  6.523
+                                                       },
+                                             "end":  {
+                                                         "x":  10.1275,
+                                                         "y":  6.523
+                                                     },
+                                             "type":  "interior",
+                                             "thickness":  0.1143,
+                                             "length":  9.9604,
+                                             "bearing_deg":  90.0,
+                                             "orientation":  "horizontal",
+                                             "room_a":  "bedroom_0",
+                                             "room_b":  "kitchen_0",
+                                             "id":  "W006"
+                                         },
+                                         {
+                                             "start":  {
+                                                           "x":  11.0423,
+                                                           "y":  6.523
+                                                       },
+                                             "end":  {
+                                                         "x":  11.0423,
+                                                         "y":  2.0
+                                                     },
+                                             "type":  "interior",
+                                             "thickness":  0.1143,
+                                             "length":  4.523,
+                                             "bearing_deg":  180.0,
+                                             "orientation":  "vertical",
+                                             "room_a":  "bedroom_0",
+                                             "room_b":  "bedroom_1",
+                                             "id":  "W007"
+                                         },
+                                         {
+                                             "start":  {
+                                                           "x":  11.1295,
+                                                           "y":  11.8273
+                                                       },
+                                             "end":  {
+                                                         "x":  15.6584,
+                                                         "y":  5.7889
+                                                     },
+                                             "type":  "exterior",
+                                             "thickness":  0.2286,
+                                             "length":  7.5481,
+                                             "bearing_deg":  143.1,
+                                             "orientation":  "diagonal",
+                                             "room_a":  "bedroom_1",
+                                             "room_b":  null,
+                                             "id":  "W008"
+                                         },
+                                         {
+                                             "start":  {
+                                                           "x":  15.6584,
+                                                           "y":  5.7889
+                                                       },
+                                             "end":  {
+                                                         "x":  13.7639,
+                                                         "y":  2.0
+                                                     },
+                                             "type":  "exterior",
+                                             "thickness":  0.2286,
+                                             "length":  4.2361,
+                                             "bearing_deg":  206.6,
+                                             "orientation":  "diagonal",
+                                             "room_a":  "bedroom_1",
+                                             "room_b":  null,
+                                             "id":  "W009"
+                                         },
+                                         {
+                                             "start":  {
+                                                           "x":  10.1275,
+                                                           "y":  6.523
+                                                       },
+                                             "end":  {
+                                                         "x":  10.1275,
+                                                         "y":  6.523
+                                                     },
+                                             "type":  "interior",
+                                             "thickness":  0.1143,
+                                             "length":  10.2746,
+                                             "bearing_deg":  180.0,
+                                             "orientation":  "vertical",
+                                             "room_a":  "kitchen_0",
+                                             "room_b":  "parking_0",
+                                             "id":  "W010"
+                                         },
+                                         {
+                                             "start":  {
+                                                           "x":  6.4261,
+                                                           "y":  9.9479
+                                                       },
+                                             "end":  {
+                                                         "x":  10.1275,
+                                                         "y":  9.9479
+                                                     },
+                                             "type":  "interior",
+                                             "thickness":  0.1143,
+                                             "length":  3.7014,
+                                             "bearing_deg":  90.0,
+                                             "orientation":  "horizontal",
+                                             "room_a":  "kitchen_0",
+                                             "room_b":  "toilet_0",
+                                             "id":  "W011"
+                                         },
+                                         {
+                                             "start":  {
+                                                           "x":  6.4261,
+                                                           "y":  9.9479
+                                                       },
+                                             "end":  {
+                                                         "x":  6.4261,
+                                                         "y":  6.523
+                                                     },
+                                             "type":  "interior",
+                                             "thickness":  0.1143,
+                                             "length":  3.4249,
+                                             "bearing_deg":  180.0,
+                                             "orientation":  "vertical",
+                                             "room_a":  "living_0",
+                                             "room_b":  "kitchen_0",
+                                             "id":  "W012"
+                                         },
+                                         {
+                                             "start":  {
+                                                           "x":  10.1275,
+                                                           "y":  6.523
+                                                       },
+                                             "end":  {
+                                                         "x":  11.0423,
+                                                         "y":  6.523
+                                                     },
+                                             "type":  "interior",
+                                             "thickness":  0.1143,
+                                             "length":  0.9147,
+                                             "bearing_deg":  90.0,
+                                             "orientation":  "horizontal",
+                                             "room_a":  "bedroom_0",
+                                             "room_b":  "parking_0",
+                                             "id":  "W013"
+                                         }
+                                     ],
+                           "doors":  [
+                                         {
+                                             "id":  "D001",
+                                             "type":  "internal",
+                                             "width":  0.9,
+                                             "position":  {
+                                                              "x":  4.2131,
+                                                              "y":  7.4261
+                                                          },
+                                             "wall_id":  "W002",
+                                             "from_room":  "living_0",
+                                             "to_room":  "dining_0"
+                                         },
+                                         {
+                                             "id":  "D002",
+                                             "type":  "internal",
+                                             "width":  0.9,
+                                             "position":  {
+                                                              "x":  6.4261,
+                                                              "y":  4.2615
+                                                          },
+                                             "wall_id":  null,
+                                             "from_room":  "living_0",
+                                             "to_room":  "bedroom_0"
+                                         },
+                                         {
+                                             "id":  "D003",
+                                             "type":  "internal",
+                                             "width":  0.9,
+                                             "position":  {
+                                                              "x":  6.4261,
+                                                              "y":  8.687
+                                                          },
+                                             "wall_id":  "W012",
+                                             "from_room":  "dining_0",
+                                             "to_room":  "kitchen_0"
+                                         },
+                                         {
+                                             "id":  "D004",
+                                             "type":  "internal",
+                                             "width":  0.9,
+                                             "position":  {
+                                                              "x":  11.0423,
+                                                              "y":  4.2615
+                                                          },
+                                             "wall_id":  "W007",
+                                             "from_room":  "bedroom_0",
+                                             "to_room":  "bedroom_1"
+                                         },
+                                         {
+                                             "id":  "D005",
+                                             "type":  "internal",
+                                             "width":  0.9,
+                                             "position":  {
+                                                              "x":  8.2768,
+                                                              "y":  6.523
+                                                          },
+                                             "wall_id":  null,
+                                             "from_room":  "bedroom_0",
+                                             "to_room":  "kitchen_0"
+                                         },
+                                         {
+                                             "id":  "D006",
+                                             "type":  "service",
+                                             "width":  0.9,
+                                             "position":  {
+                                                              "x":  13.075,
+                                                              "y":  6.523
+                                                          },
+                                             "wall_id":  null,
+                                             "from_room":  "bedroom_1",
+                                             "to_room":  "parking_0"
+                                         },
+                                         {
+                                             "id":  "D007",
+                                             "type":  "internal",
+                                             "width":  0.75,
+                                             "position":  {
+                                                              "x":  8.2768,
+                                                              "y":  9.9479
+                                                          },
+                                             "wall_id":  "W011",
+                                             "from_room":  "kitchen_0",
+                                             "to_room":  "toilet_0"
+                                         },
+                                         {
+                                             "id":  "D008",
+                                             "type":  "service",
+                                             "width":  0.9,
+                                             "position":  {
+                                                              "x":  10.1275,
+                                                              "y":  8.2354
+                                                          },
+                                             "wall_id":  null,
+                                             "from_room":  "kitchen_0",
+                                             "to_room":  "parking_0"
+                                         },
+                                         {
+                                             "id":  "D009",
+                                             "type":  "service",
+                                             "width":  0.75,
+                                             "position":  {
+                                                              "x":  10.1275,
+                                                              "y":  10.8041
+                                                          },
+                                             "wall_id":  null,
+                                             "from_room":  "toilet_0",
+                                             "to_room":  "parking_0"
+                                         }
+                                     ],
+                           "windows":  [
+                                           {
+                                               "id":  "WIN001",
+                                               "room_id":  "living_0",
+                                               "wall_id":  "W001",
+                                               "position":  {
+                                                                "x":  2.0,
+                                                                "y":  4.713
+                                                            },
+                                               "width":  1.5,
+                                               "type":  "standard",
+                                               "sill_height_m":  0.9,
+                                               "orientation":  "vertical"
+                                           },
+                                           {
+                                               "id":  "WIN002",
+                                               "room_id":  "dining_0",
+                                               "wall_id":  "W005",
+                                               "position":  {
+                                                                "x":  4.2131,
+                                                                "y":  10.6746
+                                                            },
+                                               "width":  1.2,
+                                               "type":  "standard",
+                                               "sill_height_m":  0.9,
+                                               "orientation":  "horizontal"
+                                           },
+                                           {
+                                               "id":  "WIN003",
+                                               "room_id":  "bedroom_0",
+                                               "wall_id":  "W004",
+                                               "position":  {
+                                                                "x":  8.7342,
+                                                                "y":  2.0
+                                                            },
+                                               "width":  1.2,
+                                               "type":  "standard",
+                                               "sill_height_m":  0.9,
+                                               "orientation":  "horizontal"
+                                           },
+                                           {
+                                               "id":  "WIN004",
+                                               "room_id":  "bedroom_1",
+                                               "wall_id":  "W009",
+                                               "position":  {
+                                                                "x":  14.7111,
+                                                                "y":  3.8944
+                                                            },
+                                               "width":  1.2,
+                                               "type":  "standard",
+                                               "sill_height_m":  0.9,
+                                               "orientation":  "diagonal"
+                                           },
+                                           {
+                                               "id":  "WIN005",
+                                               "room_id":  "toilet_0",
+                                               "wall_id":  "W005",
+                                               "position":  {
+                                                                "x":  8.2768,
+                                                                "y":  11.3519
+                                                            },
+                                               "width":  0.6,
+                                               "type":  "ventilation",
+                                               "sill_height_m":  1.5,
+                                               "orientation":  "horizontal"
+                                           }
+                                       ],
+                           "entrances":  [
+                                             {
+                                                 "id":  "ENT001",
+                                                 "type":  "main",
+                                                 "side":  "front",
+                                                 "position":  {
+                                                                  "x":  2.0,
+                                                                  "y":  6.1529
+                                                              },
+                                                 "width":  5.0,
+                                                 "wall_id":  "W001",
+                                                 "room_id":  "living_0",
+                                                 "direction":  "0deg"
+                                             }
+                                         ],
+                           "parking":  [
+                                           {
+                                               "id":  "P001",
+                                               "room_id":  "parking_0",
+                                               "polygon":  [
+                                                               {
+                                                                   "x":  10.1275,
+                                                                   "y":  11.6603
+                                                               },
+                                                               {
+                                                                   "x":  11.1295,
+                                                                   "y":  11.8273
+                                                               },
+                                                               {
+                                                                   "x":  15.1077,
+                                                                   "y":  6.523
+                                                               },
+                                                               {
+                                                                   "x":  10.1275,
+                                                                   "y":  6.523
+                                                               }
+                                                           ],
+                                               "vehicle_type":  "car",
+                                               "width_m":  4.98,
+                                               "length_m":  5.304,
+                                               "area_sqft":  169.88,
+                                               "area_sqm":  15.782,
+                                               "road_access":  true,
+                                               "meets_minimum":  true
+                                           }
+                                       ],
+                           "dead_spaces":  [
+
+                                           ],
+                           "circulation":  {
+                                               "connected":  true,
+                                               "reachable_rooms":  7,
+                                               "total_rooms":  7,
+                                               "dead_ends":  0,
+                                               "graph_edges":  13,
+                                               "score":  1.0
+                                           },
+                           "measurements":  {
+                                                "plot_area_sqm":  207.0,
+                                                "plot_area_sqft":  2228.13,
+                                                "buildable_area_sqm":  110.017,
+                                                "buildable_area_sqft":  1184.21,
+                                                "room_area_sqm":  110.017,
+                                                "room_area_sqft":  1184.21,
+                                                "built_up_area_sqm":  110.017,
+                                                "built_up_area_sqft":  1184.21,
+                                                "exterior_wall_length_m":  41.1092,
+                                                "interior_wall_length_m":  39.4161,
+                                                "total_wall_length_m":  80.5253,
+                                                "exterior_wall_area_sqm":  123.3276,
+                                                "interior_wall_area_sqm":  118.2483,
+                                                "floor_area_sqm":  110.017,
+                                                "floor_area_sqft":  1184.21,
+                                                "roof_area_sqm":  110.017,
+                                                "roof_area_sqft":  1184.21,
+                                                "total_door_count":  9,
+                                                "total_window_count":  5,
+                                                "perimeter_m":  41.1093
+                                            },
+                           "metrics":  {
+                                           "building_coverage":  0.5315,
+                                           "building_coverage_percentage":  53.15,
+                                           "buildable_utilization":  1.0,
+                                           "buildable_utilization_percentage":  100.0,
+                                           "dead_space_area_sqm":  0,
+                                           "dead_space_area_sqft":  0.0,
+                                           "dead_space_percentage":  0.0
+                                       },
+                           "score":  {
+                                         "buildable_utilization":  1.0,
+                                         "building_coverage":  1.0,
+                                         "aspect_quality":  1.0,
+                                         "adjacency":  0.1333,
+                                         "circulation":  1.0,
+                                         "natural_light":  1.0,
+                                         "ventilation":  0.8333,
+                                         "parking_accessibility":  1.0,
+                                         "dead_space_efficiency":  1.0,
+                                         "constraint_compliance":  1.0,
+                                         "overall":  0.8617
+                                     },
+                           "validation":  {
+                                              "valid":  true,
+                                              "warnings":  [
+
+                                                           ],
+                                              "errors":  [
+
+                                                         ],
+                                              "constraints_checked":  [
+                                                                          "ROOM_COMPLETENESS",
+                                                                          "ROOM_AREA_MINIMUM",
+                                                                          "ROOM_NO_OVERLAP",
+                                                                          "ROOM_VALID_GEOMETRY",
+                                                                          "ROOM_INSIDE_BOUNDARY",
+                                                                          "ROOM_DIMENSION_MINIMUM",
+                                                                          "ROOM_ASPECT_RATIO",
+                                                                          "NATURAL_LIGHT",
+                                                                          "VENTILATION",
+                                                                          "PARKING_DIMENSIONS"
+                                                                      ]
+                                          },
+                           "timings":  {
+                                           "validation_ms":  2.272668999466987,
+                                           "wall_extraction_ms":  8.14974200056895,
+                                           "entrance_ms":  0.8774640000410727,
+                                           "doors_ms":  4.327960000409803,
+                                           "windows_ms":  2.909986000304343,
+                                           "circulation_ms":  0.40276900017488515,
+                                           "scoring_ms":  2.54168099945673
+                                       },
+                           "rank":  1
+                       }
+                   ],
+    "best_candidate_id":  "layout_d1e59cc1a644_c0",
+    "timing":  {
+                   "geometry_validation_ms":  0.19658000019262545,
+                   "setback_ms":  0.09553499967296375,
+                   "bsp_generation_ms":  4.715684000075271,
+                   "architectural_elements_ms":  25.37406900046335,
+                   "total_ms":  30.69195199987007
+               }
+}

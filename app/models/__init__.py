@@ -1,16 +1,15 @@
 """
-Backward-compatibility bridge for models.
-Re-exports from app.models.*
+Models package — re-exports for convenient import.
 """
-from .models.common import Coordinate, Point
-from .models.input_models import (
+from .common import Coordinate, Point
+from .input_models import (
     PlotInput,
     RoomRequirement,
     EntranceInput,
     PreferencesInput,
     GenerateLayoutRequest,
 )
-from .models.output_models import (
+from .output_models import (
     LayoutMetadata,
     PlotOutput,
     BuildableAreaOutput,

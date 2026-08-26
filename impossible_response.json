@@ -1,0 +1,9 @@
+{
+  "error_code": "LAYOUT_INFEASIBLE",
+  "message": "Total required area (1561 sqft) exceeds available buildable area (155 sqft after wall overhead). Reduce room requirements or setback.; Room 'living_0' (living) requires 500 sqft but total buildable area is only 172 sqft; Room 'bedroom_0' (bedroom) requires 250 sqft but total buildable area is only 172 sqft; Room 'bedroom_1' (bedroom) requires 250 sqft but total buildable area is only 172 sqft; Room 'bedroom_2' (bedroom) requires 250 sqft but total buildable area is only 172 sqft",
+  "details": {
+    "required_area_sqft": 1561.0,
+    "available_area_sqft": 172.0,
+    "required_rooms": 6
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "plot": {
+    "points": [
+      {"x": 0, "y": 0},
+      {"x": 6, "y": 0},
+      {"x": 6, "y": 6},
+      {"x": 0, "y": 6}
+    ],
+    "facing": "north",
+    "road_side": "front",
+    "setback": 1.0
+  },
+  "rooms": [
+    {"type": "living", "count": 1, "min_area": 500},
+    {"type": "bedroom", "count": 3, "min_area": 250},
+    {"type": "kitchen", "count": 1, "min_area": 150}
+  ],
+  "entrance": {
+    "side": "front",
+    "width": 1.2
+  },
+  "preferences": {
+    "parking": true
+  },
+  "candidate_count": 1
+}

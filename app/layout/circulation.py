@@ -21,6 +21,8 @@ def build_adjacency_graph(
     room_polygons: Dict[str, Polygon],
     doors: List[dict],
     entrance: Optional[dict],
+    corridors: Optional[List[dict]] = None,
+    corridor_polygons: Optional[List[Polygon]] = None,
 ) -> Dict[str, Set[str]]:
     """
     Build an undirected room connectivity graph.
@@ -29,6 +31,7 @@ def build_adjacency_graph(
     1. Shared boundaries between room polygons
     2. Doors connecting rooms
     3. Entrance connecting to a room
+    4. Corridors connecting to adjacent rooms
 
     Returns:
         Adjacency dict: {room_id: set of connected room_ids}
@@ -65,6 +68,26 @@ def build_adjacency_graph(
         if ent_room and ent_room in graph:
             graph["ENTRANCE"].add(ent_room)
             graph[ent_room].add("ENTRANCE")
+
+    # 4. Corridors (connect corridor to adjacent rooms)
+    if corridors and corridor_polygons:
+        for corr_data, corr_poly in zip(corridors, corridor_polygons):
+            corr_id = corr_data.get("id", "corridor_0")
+            graph[corr_id]  # ensure corridor is in graph
+
+            for rid in room_ids:
+                if polygons_share_boundary(
+                    corr_poly, room_polygons[rid], min_length=0.1,
+                ):
+                    graph[corr_id].add(rid)
+                    graph[rid].add(corr_id)
+
+            # Connect corridor to entrance if applicable
+            if entrance:
+                ent_room = entrance.get("room_id")
+                if ent_room and ent_room in graph.get(corr_id, set()):
+                    graph[corr_id].add("ENTRANCE")
+                    graph["ENTRANCE"].add(corr_id)
 
     return dict(graph)
 

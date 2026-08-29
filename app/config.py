@@ -74,6 +74,15 @@ MIN_POLYGON_AREA_SQM: float = 1.0         # Ignore polygon fragments < 1 sqm
 DEAD_SPACE_MIN_AREA_SQM: float = 0.5      # Ignore dead space < 0.5 sqm
 
 # ─────────────────────────────────────────────
+# CORRIDOR PARAMETERS
+# ─────────────────────────────────────────────
+
+MIN_CORRIDOR_WIDTH_M: float = 1.0          # Minimum corridor width (metres)
+PREFERRED_CORRIDOR_WIDTH_M: float = 1.2    # Preferred corridor width
+MAX_CORRIDOR_WIDTH_M: float = 1.8          # Maximum corridor width
+CORRIDOR_AREA_RATIO: float = 0.12          # Max fraction of buildable for corridor
+
+# ─────────────────────────────────────────────
 # BSP PARAMETERS
 # ─────────────────────────────────────────────
 
@@ -299,9 +308,17 @@ DEAD_SPACE_PENALTIES: Dict[str, float] = {
 # ─────────────────────────────────────────────
 
 DEFAULT_CANDIDATE_COUNT: int = 1
-MAX_CANDIDATE_COUNT: int = 10
+MAX_CANDIDATE_COUNT: int = 12
+INTERNAL_CANDIDATE_COUNT: int = 10         # Generate more internally, return top N
 
-CANDIDATE_STRATEGIES: List[str] = ["balanced", "compact", "zoned"]
+CANDIDATE_STRATEGIES: List[str] = [
+    "open_plan",
+    "central_corridor",
+    "side_corridor",
+    "public_private",
+    "service_core",
+    "compact",
+]
 
 # ─────────────────────────────────────────────
 # DEFAULT FLOOR HEIGHT (for wall area calc)

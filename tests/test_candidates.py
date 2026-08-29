@@ -6,7 +6,7 @@ from shapely.geometry import Polygon
 from app.layout.bsp import RoomSpec, build_room_specs
 from app.optimization.candidates import generate_candidates
 from app.optimization.ranking import rank_candidates
-from app.config import SQ_FT_TO_SQ_M
+from app.config import SQ_FT_TO_SQ_M, CANDIDATE_STRATEGIES
 
 
 class TestCandidates:
@@ -19,17 +19,36 @@ class TestCandidates:
         ], {"parking": False})
 
         candidates = generate_candidates(poly, specs, candidate_count=3, seed=42)
-        assert len(candidates) == 3
-        strategies = [c["strategy"] for c in candidates]
-        assert "balanced" in strategies
-        assert "compact" in strategies
-        assert "zoned" in strategies
+        # Internal generation produces more candidates for diversity
+        assert len(candidates) >= 3
+        strategies = {c["strategy"] for c in candidates}
+        # At least 3 distinct strategies used
+        assert len(strategies) >= 3
+        # Strategies are from the new set
+        for s in strategies:
+            assert s in CANDIDATE_STRATEGIES
 
     def test_ranking_orders_valid_first_then_score(self):
+        # Each candidate needs distinct rooms to avoid fingerprint deduplication
         candidates = [
-            {"id": "c1", "strategy": "balanced", "validation": {"valid": False}, "score": {"overall": 0.95}},
-            {"id": "c2", "strategy": "compact", "validation": {"valid": True}, "score": {"overall": 0.85}},
-            {"id": "c3", "strategy": "zoned", "validation": {"valid": True}, "score": {"overall": 0.90}},
+            {
+                "id": "c1", "strategy": "open_plan",
+                "validation": {"valid": False},
+                "score": {"overall": 0.95},
+                "rooms": [{"id": "r1", "type": "living", "centroid": {"x": 1, "y": 1}, "area_sqm": 10}],
+            },
+            {
+                "id": "c2", "strategy": "compact",
+                "validation": {"valid": True},
+                "score": {"overall": 0.85},
+                "rooms": [{"id": "r1", "type": "living", "centroid": {"x": 5, "y": 5}, "area_sqm": 12}],
+            },
+            {
+                "id": "c3", "strategy": "public_private",
+                "validation": {"valid": True},
+                "score": {"overall": 0.90},
+                "rooms": [{"id": "r1", "type": "living", "centroid": {"x": 9, "y": 9}, "area_sqm": 15}],
+            },
         ]
 
         ranked = rank_candidates(candidates)

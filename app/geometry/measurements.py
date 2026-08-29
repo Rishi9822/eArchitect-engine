@@ -30,18 +30,20 @@ def compute_measurements(
     doors: List[dict],
     windows: List[dict],
     floor_height_m: float = DEFAULT_FLOOR_HEIGHT_M,
+    corridor_polygons: Optional[List[Polygon]] = None,
 ) -> dict:
     """
     Compute all estimator-ready geometric measurements.
 
     Args:
-        plot_polygon:  original plot (before setback)
-        inner_polygon: buildable area (after setback)
-        room_polygons: list of room Shapely Polygons
-        walls:         list of wall dicts with 'type', 'length'
-        doors:         list of door dicts
-        windows:       list of window dicts
-        floor_height_m: floor-to-ceiling height
+        plot_polygon:      original plot (before setback)
+        inner_polygon:     buildable area (after setback)
+        room_polygons:     list of room Shapely Polygons
+        walls:             list of wall dicts with 'type', 'length'
+        doors:             list of door dicts
+        windows:           list of window dicts
+        floor_height_m:    floor-to-ceiling height
+        corridor_polygons: optional list of corridor Shapely Polygons
 
     Returns:
         dict of measurements in both metric and imperial.
@@ -49,6 +51,13 @@ def compute_measurements(
     plot_area_sqm = plot_polygon.area
     buildable_area_sqm = inner_polygon.area
     room_area_sqm = sum(p.area for p in room_polygons)
+
+    corridor_area_sqm = 0.0
+    if corridor_polygons:
+        corridor_area_sqm = sum(p.area for p in corridor_polygons)
+
+    # Built-up area includes rooms + corridors
+    built_up_area_sqm = room_area_sqm + corridor_area_sqm
 
     ext_wall_length = sum(
         w.get("length", 0) for w in walls if w.get("type") == "exterior"
@@ -70,8 +79,8 @@ def compute_measurements(
         "buildable_area_sqft": round(buildable_area_sqm * SQ_M_TO_SQ_FT, 2),
         "room_area_sqm": round(room_area_sqm, 4),
         "room_area_sqft": round(room_area_sqm * SQ_M_TO_SQ_FT, 2),
-        "built_up_area_sqm": round(room_area_sqm, 4),
-        "built_up_area_sqft": round(room_area_sqm * SQ_M_TO_SQ_FT, 2),
+        "built_up_area_sqm": round(built_up_area_sqm, 4),
+        "built_up_area_sqft": round(built_up_area_sqm * SQ_M_TO_SQ_FT, 2),
         "exterior_wall_length_m": round(ext_wall_length, 4),
         "interior_wall_length_m": round(int_wall_length, 4),
         "total_wall_length_m": round(total_wall_length, 4),
@@ -84,4 +93,6 @@ def compute_measurements(
         "total_door_count": len(doors),
         "total_window_count": len(windows),
         "perimeter_m": round(perimeter, 4),
+        "corridor_area_sqm": round(corridor_area_sqm, 4),
+        "corridor_area_sqft": round(corridor_area_sqm * SQ_M_TO_SQ_FT, 2),
     }

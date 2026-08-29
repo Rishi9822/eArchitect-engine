@@ -149,6 +149,23 @@ class ParkingOutput(BaseModel):
 
 
 # ─────────────────────────────────────────────
+# CORRIDORS
+# ─────────────────────────────────────────────
+
+class CorridorOutput(BaseModel):
+    """A first-class corridor/circulation element."""
+    id: str
+    type: str = "corridor"
+    polygon: List[Coordinate]
+    centroid: Optional[Coordinate] = None
+    area_sqm: float = 0.0
+    width: float = 0.0
+    length: float = 0.0
+    connected_rooms: List[str] = Field(default_factory=list)
+    entrance_connection: bool = False
+
+
+# ─────────────────────────────────────────────
 # DEAD SPACES
 # ─────────────────────────────────────────────
 
@@ -206,6 +223,8 @@ class MeasurementsOutput(BaseModel):
     total_door_count: int = 0
     total_window_count: int = 0
     perimeter_m: float = 0.0
+    corridor_area_sqm: float = 0.0
+    corridor_area_sqft: float = 0.0
 
 
 # ─────────────────────────────────────────────
@@ -282,6 +301,7 @@ class CandidateLayout(BaseModel):
     metrics: MetricsOutput
     score: ScoreBreakdown
     validation: ValidationOutput
+    corridors: List[CorridorOutput] = Field(default_factory=list)
 
 
 # ─────────────────────────────────────────────

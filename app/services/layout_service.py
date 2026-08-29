@@ -142,7 +142,9 @@ def _process_single_candidate(
     room_leaves = candidate_result["room_leaves"]
     dead_polygons = candidate_result["dead_polygons"]
     unplaced = candidate_result.get("unplaced_rooms", [])
-    strategy = candidate_result.get("strategy", "balanced")
+    strategy = candidate_result.get("strategy", "open_plan")
+    corridors_data = candidate_result.get("corridors", [])
+    corridor_polys = candidate_result.get("corridor_polygons", [])
 
     # ── Build room data ──────────────────────────────────────────
     room_polygons: Dict[str, Polygon] = {}
@@ -196,8 +198,21 @@ def _process_single_candidate(
     room_ids_list = list(room_polygons.keys())
     room_polys_list = [room_polygons[rid] for rid in room_ids_list]
 
+    all_polys_for_walls = list(room_polys_list)
+    all_ids_for_walls = list(room_ids_list)
+    all_polygons_dict = dict(room_polygons)
+    all_types_dict = dict(room_types)
+
+    if corridor_polys and corridors_data:
+        for corr_data, corr_poly in zip(corridors_data, corridor_polys):
+            corr_id = corr_data.get("id", "corridor_0")
+            all_ids_for_walls.append(corr_id)
+            all_polys_for_walls.append(corr_poly)
+            all_polygons_dict[corr_id] = corr_poly
+            all_types_dict[corr_id] = "corridor"
+
     walls_raw = extract_wall_segments(
-        room_polys_list, room_ids_list,
+        all_polys_for_walls, all_ids_for_walls,
         plot_polygon, inner_polygon,
     )
     timings["wall_extraction_ms"] = (time.perf_counter() - t0) * 1000
@@ -233,7 +248,7 @@ def _process_single_candidate(
     # ── Doors ────────────────────────────────────────────────────
     t0 = time.perf_counter()
     entrance_room_id = entrance_data.get("room_id") if entrance_data else None
-    doors_raw = generate_doors(room_polygons, room_types, entrance_room_id)
+    doors_raw = generate_doors(all_polygons_dict, all_types_dict, entrance_room_id)
     for d in doors_raw:
         d["wall_id"] = _find_wall_id(d["position"])
     timings["doors_ms"] = (time.perf_counter() - t0) * 1000
@@ -273,7 +288,11 @@ def _process_single_candidate(
 
     # ── Circulation ──────────────────────────────────────────────
     t0 = time.perf_counter()
-    graph = build_adjacency_graph(room_polygons, doors_raw, entrance_data)
+    graph = build_adjacency_graph(
+        room_polygons, doors_raw, entrance_data,
+        corridors=corridors_data,
+        corridor_polygons=corridor_polys,
+    )
     circulation_data = analyze_circulation(
         graph, list(room_polygons.keys()), entrance_room_id,
     )
@@ -314,6 +333,7 @@ def _process_single_candidate(
     measurements_data = compute_measurements(
         plot_polygon, inner_polygon, room_polygon_list,
         walls_raw, doors_raw, windows_raw,
+        corridor_polygons=corridor_polys,
     )
 
     # ── Metrics ──────────────────────────────────────────────────
@@ -368,6 +388,7 @@ def _process_single_candidate(
         "id": candidate_id,
         "strategy": strategy,
         "rooms": rooms_output,
+        "corridors": corridors_data,
         "walls": walls_raw,
         "doors": doors_raw,
         "windows": windows_raw,
@@ -477,6 +498,7 @@ def generate_layout_response(
         specs=specs,
         candidate_count=request.candidate_count,
         seed=request.seed,
+        facing=request.plot.facing,
     )
     timings["bsp_generation_ms"] = (time.perf_counter() - t0) * 1000
 
@@ -511,7 +533,10 @@ def generate_layout_response(
         )
 
     # ── 8. Rank candidates ───────────────────────────────────────
-    ranked = rank_candidates(processed_candidates)
+    ranked = rank_candidates(
+        processed_candidates,
+        target_count=request.candidate_count,
+    )
     best_id = ranked[0]["id"]
 
     # ── 9. Assemble response ─────────────────────────────────────

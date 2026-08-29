@@ -188,17 +188,25 @@ def _compute_zone_target_areas(
 
 
 def zone_partition(
-    polygon: Polygon, rooms_by_zone: Dict[str, List[RoomSpec]]
+    polygon: Polygon,
+    rooms_by_zone: Dict[str, List[RoomSpec]],
+    zone_order_override: Optional[List[str]] = None,
+    split_jitter: float = 0.0,
+    rng: Optional[random.Random] = None,
+    prefer_alternate_axis: bool = False,
 ) -> Dict[str, Polygon]:
     """
     Slice the buildable polygon into macro zones using BSP.
 
     Strategy:
-    - Sort zones by ZONE_ORDER
+    - Sort zones by zone_order_override or default ZONE_ORDER
     - For each zone (except last), split off its proportional area
     - Last zone gets the remainder
+    - split_jitter adds deterministic perturbation to split ratios
+    - prefer_alternate_axis flips the primary split axis
     """
-    active_zones = [z for z in ZONE_ORDER if z in rooms_by_zone]
+    order = zone_order_override if zone_order_override else ZONE_ORDER
+    active_zones = [z for z in order if z in rooms_by_zone]
     if not active_zones:
         return {}
 
@@ -218,7 +226,15 @@ def zone_partition(
             fraction = target_areas.get(zone, 0) / remaining_target
         fraction = max(MIN_SPLIT_RATIO, min(MAX_SPLIT_RATIO, fraction))
 
+        # Apply jitter for strategy variation
+        if split_jitter > 0 and rng is not None:
+            jitter = rng.uniform(-split_jitter, split_jitter)
+            fraction = max(MIN_SPLIT_RATIO, min(MAX_SPLIT_RATIO, fraction + jitter))
+
         axis = compute_longest_axis(remainder)
+        if prefer_alternate_axis:
+            axis = "x" if axis == "y" else "y"
+
         best_ratio = find_best_ratio(remainder, axis, fraction)
         left, right = split_polygon(remainder, axis, best_ratio)
 
@@ -299,6 +315,11 @@ def recursive_bsp(
         target_ratio = 0.5
 
     target_ratio = max(MIN_SPLIT_RATIO, min(MAX_SPLIT_RATIO, target_ratio))
+
+    # Apply rng-based split perturbation for strategy variation
+    if rng is not None and depth <= 2:
+        jitter = rng.uniform(-0.05, 0.05)
+        target_ratio = max(MIN_SPLIT_RATIO, min(MAX_SPLIT_RATIO, target_ratio + jitter))
 
     # Try primary axis first, then alternate
     primary_axis = compute_longest_axis(polygon)
@@ -429,14 +450,20 @@ def generate_bsp_layout(
     inner_polygon: Polygon,
     specs: List[RoomSpec],
     seed: Optional[int] = None,
+    zone_order_override: Optional[List[str]] = None,
+    split_jitter: float = 0.0,
+    prefer_alternate_axis: bool = False,
 ) -> Dict:
     """
     Full BSP layout generation pipeline on the buildable polygon.
 
     Args:
-        inner_polygon: buildable area polygon (after setback)
-        specs:         list of RoomSpec objects
-        seed:          random seed for determinism
+        inner_polygon:        buildable area polygon (after setback)
+        specs:                list of RoomSpec objects
+        seed:                 random seed for determinism
+        zone_order_override:  custom zone partition order
+        split_jitter:         perturbation magnitude for zone split ratios
+        prefer_alternate_axis: flip the primary split axis
 
     Returns:
         dict with:
@@ -453,7 +480,14 @@ def generate_bsp_layout(
         rooms_by_zone.setdefault(s.zone, []).append(s)
 
     # Macro zone partition
-    zone_polygons = zone_partition(inner_polygon, rooms_by_zone)
+    zone_polygons = zone_partition(
+        inner_polygon,
+        rooms_by_zone,
+        zone_order_override=zone_order_override,
+        split_jitter=split_jitter,
+        rng=rng,
+        prefer_alternate_axis=prefer_alternate_axis,
+    )
 
     # Recursive BSP within each zone
     room_leaves: Dict[str, BSPNode] = {}

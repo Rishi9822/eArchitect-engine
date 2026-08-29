@@ -1,23 +1,37 @@
 """
-Candidate ranking — sorts candidates by overall score
-and identifies the best one.
+Candidate ranking — sorts candidates by overall score,
+removes duplicates, and selects diverse high-quality results.
 """
 from __future__ import annotations
 
 import logging
 from typing import List, Dict, Optional
 
+from .diversity import select_diverse_candidates
+from .fingerprint import deduplicate_candidates
+
 logger = logging.getLogger(__name__)
 
 
 def rank_candidates(
     candidates: List[Dict],
+    target_count: Optional[int] = None,
 ) -> List[Dict]:
     """
     Rank candidate layouts by overall score (descending).
 
+    Pipeline:
+    1. Sort by validity then score
+    2. Remove geometric duplicates
+    3. Select diverse subset (if target_count specified)
+    4. Assign final ranks
+
     Invalid candidates (validation.valid == False) are ranked
     below valid ones regardless of score.
+
+    Args:
+        candidates:    list of processed candidate dicts
+        target_count:  if set, return at most this many diverse candidates
 
     Returns:
         Sorted list of candidates (best first)
@@ -29,6 +43,15 @@ def rank_candidates(
         return (-int(is_valid), -score)
 
     ranked = sorted(candidates, key=sort_key)
+
+    # Deduplicate
+    ranked = deduplicate_candidates(ranked)
+
+    # Diversity selection
+    if target_count is not None and len(ranked) > target_count:
+        ranked = select_diverse_candidates(ranked, target_count=target_count)
+        # Re-sort after diversity selection
+        ranked = sorted(ranked, key=sort_key)
 
     for i, c in enumerate(ranked):
         c["rank"] = i + 1

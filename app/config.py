@@ -304,21 +304,34 @@ DEAD_SPACE_PENALTIES: Dict[str, float] = {
 }
 
 # ─────────────────────────────────────────────
-# CANDIDATE GENERATION
+# CANDIDATE GENERATION & STRATEGY VARIATIONS
 # ─────────────────────────────────────────────
 
 DEFAULT_CANDIDATE_COUNT: int = 1
 MAX_CANDIDATE_COUNT: int = 12
-INTERNAL_CANDIDATE_COUNT: int = 10         # Generate more internally, return top N
+INTERNAL_CANDIDATE_COUNT: int = 15         # Generate more internally, return top N
 
-CANDIDATE_STRATEGIES: List[str] = [
-    "open_plan",
-    "central_corridor",
-    "side_corridor",
-    "public_private",
-    "service_core",
-    "compact",
+STRATEGY_VARIATIONS: Dict[str, List[str]] = {
+    "public_private": ["left_private", "right_private", "reversed"],
+    "service_core": ["left_core", "right_core", "central_core"],
+    "side_corridor": ["left_corridor", "right_corridor"],
+    "central_corridor": ["horizontal_corridor", "vertical_corridor"],
+    "open_plan": ["standard", "alternate_axis", "service_first"],
+    "compact": ["dense_front", "dense_corner"],
+}
+
+CANDIDATE_STRATEGIES: List[str] = list(STRATEGY_VARIATIONS.keys())
+
+# Flattened list of (strategy, variation) pairs for generation pool
+CANDIDATE_STRATEGY_VARIATION_PAIRS: List[tuple[str, str]] = [
+    (strat, var)
+    for strat, vars_list in STRATEGY_VARIATIONS.items()
+    for var in vars_list
 ]
+
+# Geometric deduplication tolerances
+DEDUP_CENTROID_TOLERANCE_M: float = 0.35   # Euclidean distance in metres
+DEDUP_AREA_TOLERANCE_SQM: float = 0.50     # Room area difference in sqm
 
 # ─────────────────────────────────────────────
 # DEFAULT FLOOR HEIGHT (for wall area calc)

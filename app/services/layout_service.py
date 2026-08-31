@@ -69,6 +69,7 @@ from ..layout.doors import generate_doors
 from ..layout.windows import generate_windows
 from ..layout.parking import generate_parking_entities
 from ..layout.circulation import build_adjacency_graph, analyze_circulation
+from ..layout.corridor import build_corridor_data
 from ..walls.extractor import extract_wall_segments
 from ..scoring.scorer import score_layout
 from ..optimization.candidates import generate_candidates
@@ -143,6 +144,7 @@ def _process_single_candidate(
     dead_polygons = candidate_result["dead_polygons"]
     unplaced = candidate_result.get("unplaced_rooms", [])
     strategy = candidate_result.get("strategy", "open_plan")
+    variation = candidate_result.get("variation", "default")
     corridors_data = candidate_result.get("corridors", [])
     corridor_polys = candidate_result.get("corridor_polygons", [])
 
@@ -205,7 +207,7 @@ def _process_single_candidate(
 
     if corridor_polys and corridors_data:
         for corr_data, corr_poly in zip(corridors_data, corridor_polys):
-            corr_id = corr_data.get("id", "corridor_0")
+            corr_id = corr_data.get("id", "COR001")
             all_ids_for_walls.append(corr_id)
             all_polys_for_walls.append(corr_poly)
             all_polygons_dict[corr_id] = corr_poly
@@ -244,6 +246,16 @@ def _process_single_candidate(
     if entrance_data:
         entrance_data["wall_id"] = _find_wall_id(entrance_data["position"])
     timings["entrance_ms"] = (time.perf_counter() - t0) * 1000
+
+    # ── Re-build corridor entities with entrance proximity ────────
+    if corridor_polys:
+        corridors_data = [
+            build_corridor_data(
+                c_poly, room_polygons, entrance_data=entrance_data,
+                corridor_id=f"corridor_{c_idx}",
+            )
+            for c_idx, c_poly in enumerate(corridor_polys)
+        ]
 
     # ── Doors ────────────────────────────────────────────────────
     t0 = time.perf_counter()
@@ -338,10 +350,12 @@ def _process_single_candidate(
 
     # ── Metrics ──────────────────────────────────────────────────
     total_room_area = sum(p.area for p in room_polygon_list)
+    total_corridor_area = sum(c.get("area_sqm", 0.0) for c in corridors_data)
+    total_built_up_area = total_room_area + total_corridor_area
     dead_space_area = sum(d["area_sqm"] for d in dead_spaces_raw)
 
-    building_coverage = total_room_area / plot_polygon.area if plot_polygon.area > 0 else 0
-    buildable_util = total_room_area / inner_polygon.area if inner_polygon.area > 0 else 0
+    building_coverage = total_built_up_area / plot_polygon.area if plot_polygon.area > 0 else 0
+    buildable_util = total_built_up_area / inner_polygon.area if inner_polygon.area > 0 else 0
     dead_pct = dead_space_area / inner_polygon.area * 100 if inner_polygon.area > 0 else 0
 
     metrics_data = {
@@ -387,6 +401,7 @@ def _process_single_candidate(
     return {
         "id": candidate_id,
         "strategy": strategy,
+        "variation": variation,
         "rooms": rooms_output,
         "corridors": corridors_data,
         "walls": walls_raw,

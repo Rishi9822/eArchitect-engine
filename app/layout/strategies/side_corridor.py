@@ -3,11 +3,15 @@ Side Corridor strategy — dedicated corridor along one side.
 
 All rooms are accessed from a corridor running along one edge
 of the buildable area.
+
+Supports geometric variations:
+  - left_corridor: corridor carved along the left perimeter (min X)
+  - right_corridor: corridor carved along the right perimeter (max X)
 """
 from __future__ import annotations
 
 import random
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
@@ -28,22 +32,22 @@ def generate(
     specs: List[RoomSpec],
     rng: random.Random,
     facing: str = "north",
+    variation: str = "left_corridor",
 ) -> Dict:
     """
     Generate a layout with a side corridor.
-
-    Steps:
-    1. Carve corridor along one side
-    2. Run full BSP on the remaining region
     """
+    side = "right" if variation == "right_corridor" else "left"
+
     corridor_poly, main_region, _ = generate_side_corridor(
-        inner_polygon, facing, rng,
+        inner_polygon, facing, rng, side=side,
     )
 
     if corridor_poly is None or main_region is None:
         from .open_plan import generate as open_plan_gen
         result = open_plan_gen(inner_polygon, specs, rng, facing)
         result["strategy"] = "side_corridor"
+        result["variation"] = variation
         return result
 
     # BSP on the main region
@@ -58,7 +62,7 @@ def generate(
     for s in specs:
         rooms_by_zone.setdefault(s.zone, []).append(s)
 
-    zp = zone_partition(main_region, rooms_by_zone)
+    zp = zone_partition(main_region, rooms_by_zone, rng=region_rng)
     zone_polygons.update(zp)
 
     for zone, zone_poly in zp.items():
@@ -86,9 +90,11 @@ def generate(
     unplaced = [s for s in specs if s.id not in placed_ids]
 
     room_polys = {rid: leaf.polygon for rid, leaf in room_leaves.items() if leaf.room}
-    corridor_data = build_corridor_data(corridor_poly, room_polys)
+    corridor_data = build_corridor_data(corridor_poly, room_polys, corridor_id="corridor_0")
 
     return {
+        "strategy": "side_corridor",
+        "variation": variation,
         "zone_polygons": zone_polygons,
         "room_leaves": room_leaves,
         "dead_polygons": dead_polygons,

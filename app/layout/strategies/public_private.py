@@ -6,13 +6,15 @@ Forces an explicit boundary between:
   - private rooms (bedrooms, study)
   - service rooms (kitchen, toilet, utility)
 
-Uses reversed zone order (private first) and a different split
-axis preference to produce a layout that differs from open_plan.
+Supports geometric variations:
+  - left_private: private rooms placed on the left side (X-split, part_a)
+  - right_private: private rooms placed on the right side (X-split, part_b)
+  - reversed: private partitioned first in rear (Y-split, reversed order)
 """
 from __future__ import annotations
 
 import random
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from shapely.geometry import Polygon
 
@@ -24,25 +26,48 @@ def generate(
     specs: List[RoomSpec],
     rng: random.Random,
     facing: str = "north",
+    variation: str = "left_private",
 ) -> Dict:
     """
     Generate a layout with enforced public/private separation.
-
-    Uses reversed zone order so private rooms are partitioned first
-    (getting a different region), then public, then service.
     """
     seed = rng.randint(0, 2**31 - 1)
 
-    # Reverse zone order: private first, then public, then service
-    zone_order = ["private", "public", "service", "parking"]
-
-    result = generate_bsp_layout(
-        inner_polygon=inner_polygon,
-        specs=specs,
-        seed=seed,
-        zone_order_override=zone_order,
-        split_jitter=0.08,
-    )
+    if variation == "right_private":
+        zone_order = ["private", "public", "service", "parking"]
+        result = generate_bsp_layout(
+            inner_polygon=inner_polygon,
+            specs=specs,
+            seed=seed,
+            zone_order_override=zone_order,
+            split_jitter=0.06,
+            forced_axis="x",
+            flip_sides=True,
+        )
+    elif variation == "reversed":
+        zone_order = ["private", "public", "service", "parking"]
+        result = generate_bsp_layout(
+            inner_polygon=inner_polygon,
+            specs=specs,
+            seed=seed,
+            zone_order_override=zone_order,
+            split_jitter=0.08,
+            forced_axis="y",
+            flip_sides=True,
+        )
+    else:  # left_private / default
+        zone_order = ["private", "public", "service", "parking"]
+        result = generate_bsp_layout(
+            inner_polygon=inner_polygon,
+            specs=specs,
+            seed=seed,
+            zone_order_override=zone_order,
+            split_jitter=0.06,
+            forced_axis="x",
+            flip_sides=False,
+        )
 
     result["corridors"] = []
+    result["strategy"] = "public_private"
+    result["variation"] = variation
     return result

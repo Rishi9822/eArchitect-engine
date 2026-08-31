@@ -194,6 +194,8 @@ def zone_partition(
     split_jitter: float = 0.0,
     rng: Optional[random.Random] = None,
     prefer_alternate_axis: bool = False,
+    forced_axis: Optional[str] = None,
+    flip_sides: bool = False,
 ) -> Dict[str, Polygon]:
     """
     Slice the buildable polygon into macro zones using BSP.
@@ -204,6 +206,8 @@ def zone_partition(
     - Last zone gets the remainder
     - split_jitter adds deterministic perturbation to split ratios
     - prefer_alternate_axis flips the primary split axis
+    - forced_axis forces "x" or "y" split
+    - flip_sides inverts which part gets assigned to the active zone
     """
     order = zone_order_override if zone_order_override else ZONE_ORDER
     active_zones = [z for z in order if z in rooms_by_zone]
@@ -231,20 +235,27 @@ def zone_partition(
             jitter = rng.uniform(-split_jitter, split_jitter)
             fraction = max(MIN_SPLIT_RATIO, min(MAX_SPLIT_RATIO, fraction + jitter))
 
-        axis = compute_longest_axis(remainder)
-        if prefer_alternate_axis:
-            axis = "x" if axis == "y" else "y"
+        if forced_axis in ("x", "y"):
+            axis = forced_axis
+        else:
+            axis = compute_longest_axis(remainder)
+            if prefer_alternate_axis:
+                axis = "x" if axis == "y" else "y"
 
         best_ratio = find_best_ratio(remainder, axis, fraction)
-        left, right = split_polygon(remainder, axis, best_ratio)
+        part_a, part_b = split_polygon(remainder, axis, best_ratio)
 
-        if left is None or right is None:
+        if part_a is None or part_b is None:
             logger.warning("Zone split failed for '%s'; assigning remainder.", zone)
             zone_polygons[zone] = remainder
             break
 
-        zone_polygons[zone] = left
-        remainder = right
+        if flip_sides:
+            zone_polygons[zone] = part_b
+            remainder = part_a
+        else:
+            zone_polygons[zone] = part_a
+            remainder = part_b
 
     # Last zone gets remainder
     if active_zones and remainder is not None and not remainder.is_empty:
@@ -453,6 +464,8 @@ def generate_bsp_layout(
     zone_order_override: Optional[List[str]] = None,
     split_jitter: float = 0.0,
     prefer_alternate_axis: bool = False,
+    forced_axis: Optional[str] = None,
+    flip_sides: bool = False,
 ) -> Dict:
     """
     Full BSP layout generation pipeline on the buildable polygon.
@@ -464,6 +477,8 @@ def generate_bsp_layout(
         zone_order_override:  custom zone partition order
         split_jitter:         perturbation magnitude for zone split ratios
         prefer_alternate_axis: flip the primary split axis
+        forced_axis:          force "x" or "y" primary split axis
+        flip_sides:           invert side assignment for zone splits
 
     Returns:
         dict with:
@@ -487,6 +502,8 @@ def generate_bsp_layout(
         split_jitter=split_jitter,
         rng=rng,
         prefer_alternate_axis=prefer_alternate_axis,
+        forced_axis=forced_axis,
+        flip_sides=flip_sides,
     )
 
     # Recursive BSP within each zone

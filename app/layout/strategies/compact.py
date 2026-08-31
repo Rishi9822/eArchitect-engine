@@ -1,18 +1,14 @@
 """
 Compact strategy — minimise dead space and wasted circulation.
 
-Uses a different split axis preference (alternating) and tighter
-split ratios to produce a more densely packed layout.
-
-This differs from open_plan by:
-  - Using the alternate axis for the primary split
-  - Applying split jitter for variation
-  - Using a tighter zone order (parking merged early)
+Supports geometric variations:
+  - dense_front: groups parking and service in front, private and public behind
+  - dense_corner: uses alternate split axis and higher jitter to pack rooms tightly
 """
 from __future__ import annotations
 
 import random
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from shapely.geometry import Polygon
 
@@ -24,26 +20,35 @@ def generate(
     specs: List[RoomSpec],
     rng: random.Random,
     facing: str = "north",
+    variation: str = "dense_front",
 ) -> Dict:
     """
     Generate a compact layout that minimises wasted space.
-
-    Uses alternate split axis preference and jitter to produce
-    a layout distinct from open_plan.
     """
     seed = rng.randint(0, 2**31 - 1)
 
-    # Group parking with service early; public last (gets remainder)
-    zone_order = ["parking", "service", "private", "public"]
-
-    result = generate_bsp_layout(
-        inner_polygon=inner_polygon,
-        specs=specs,
-        seed=seed,
-        zone_order_override=zone_order,
-        split_jitter=0.10,
-        prefer_alternate_axis=True,
-    )
+    if variation == "dense_corner":
+        zone_order = ["parking", "service", "public", "private"]
+        result = generate_bsp_layout(
+            inner_polygon=inner_polygon,
+            specs=specs,
+            seed=seed,
+            zone_order_override=zone_order,
+            split_jitter=0.12,
+            prefer_alternate_axis=True,
+        )
+    else:  # dense_front / default
+        zone_order = ["parking", "service", "private", "public"]
+        result = generate_bsp_layout(
+            inner_polygon=inner_polygon,
+            specs=specs,
+            seed=seed,
+            zone_order_override=zone_order,
+            split_jitter=0.08,
+            prefer_alternate_axis=False,
+        )
 
     result["corridors"] = []
+    result["strategy"] = "compact"
+    result["variation"] = variation
     return result

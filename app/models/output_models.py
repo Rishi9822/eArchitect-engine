@@ -159,6 +159,7 @@ class CorridorOutput(BaseModel):
     polygon: List[Coordinate]
     centroid: Optional[Coordinate] = None
     area_sqm: float = 0.0
+    area_sqft: float = 0.0
     width: float = 0.0
     length: float = 0.0
     connected_rooms: List[str] = Field(default_factory=list)
@@ -289,6 +290,7 @@ class CandidateLayout(BaseModel):
     """A single candidate layout with all data."""
     id: str
     strategy: str
+    variation: Optional[str] = None
     rooms: List[RoomOutput]
     walls: List[WallSegment]
     doors: List[DoorOutput]

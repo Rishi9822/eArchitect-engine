@@ -4,11 +4,15 @@ Central Corridor strategy — explicit central circulation corridor.
 Carves a corridor strip through the centre of the buildable area,
 then runs BSP on the two remaining regions. Public rooms are placed
 on the entrance side; private rooms on the far side.
+
+Supports geometric variations:
+  - horizontal_corridor: central corridor running left-to-right
+  - vertical_corridor: central corridor running top-to-bottom
 """
 from __future__ import annotations
 
 import random
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
@@ -29,53 +33,48 @@ def generate(
     specs: List[RoomSpec],
     rng: random.Random,
     facing: str = "north",
+    variation: str = "horizontal_corridor",
 ) -> Dict:
     """
     Generate a layout with a central corridor.
-
-    Steps:
-    1. Carve central corridor from buildable area
-    2. Split specs into entrance-side (public+service) and far-side (private)
-    3. Run BSP on each region independently
-    4. Combine results
     """
+    orientation = "vertical" if variation == "vertical_corridor" else "horizontal"
+
     corridor_poly, region_a, region_b = generate_central_corridor(
-        inner_polygon, facing, rng,
+        inner_polygon, facing, rng, orientation=orientation,
     )
 
-    if corridor_poly is None:
+    if corridor_poly is None or region_a is None or region_b is None:
         # Fallback: generate without corridor
         from .open_plan import generate as open_plan_gen
         result = open_plan_gen(inner_polygon, specs, rng, facing)
         result["strategy"] = "central_corridor"
+        result["variation"] = variation
         return result
 
     # Classify rooms by zone for region assignment
     public_service = [s for s in specs if s.zone in ("public", "service", "parking")]
     private = [s for s in specs if s.zone == "private"]
 
-    # If no clear split, just divide evenly
     if not public_service:
         public_service = specs[:len(specs) // 2]
         private = specs[len(specs) // 2:]
     elif not private:
         private = []
 
-    # Assign larger region to the group with more area need
-    pub_area = sum(s.min_area_sqm for s in public_service)
-    priv_area = sum(s.min_area_sqm for s in private)
-
     if region_a.area >= region_b.area:
         large_region, small_region = region_a, region_b
     else:
         large_region, small_region = region_b, region_a
+
+    pub_area = sum(s.min_area_sqm for s in public_service)
+    priv_area = sum(s.min_area_sqm for s in private)
 
     if pub_area >= priv_area:
         pub_region, priv_region = large_region, small_region
     else:
         pub_region, priv_region = small_region, large_region
 
-    # BSP each region
     room_leaves: Dict[str, BSPNode] = {}
     zone_polygons: Dict[str, Polygon] = {}
     zone_used: List[Polygon] = []
@@ -92,12 +91,11 @@ def generate(
 
         region_rng = random.Random(region_seed)
 
-        # Group by zone
         rooms_by_zone: Dict[str, List[RoomSpec]] = {}
         for s in room_specs:
             rooms_by_zone.setdefault(s.zone, []).append(s)
 
-        zp = zone_partition(region, rooms_by_zone)
+        zp = zone_partition(region, rooms_by_zone, rng=region_rng)
         zone_polygons.update(zp)
 
         for zone, zone_poly in zp.items():
@@ -121,15 +119,15 @@ def generate(
             if isinstance(g, Polygon) and g.area >= 0.5:
                 dead_polygons.append(g)
 
-    # Unplaced rooms
     placed_ids = set(room_leaves.keys())
     unplaced = [s for s in specs if s.id not in placed_ids]
 
-    # Build corridor data (connected_rooms will be computed later in service)
     room_polys = {rid: leaf.polygon for rid, leaf in room_leaves.items() if leaf.room}
-    corridor_data = build_corridor_data(corridor_poly, room_polys)
+    corridor_data = build_corridor_data(corridor_poly, room_polys, corridor_id="corridor_0")
 
     return {
+        "strategy": "central_corridor",
+        "variation": variation,
         "zone_polygons": zone_polygons,
         "room_leaves": room_leaves,
         "dead_polygons": dead_polygons,

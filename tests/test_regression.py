@@ -136,12 +136,50 @@ class TestRegressionBackwardCompat:
         assert "candidates" in data
 
 
-class TestRegressionImpossibleLayout:
-    """Impossible layouts should return structured errors."""
+class TestRegressionSampleFiles:
+    """Run all JSON files in samples/ through the API."""
 
-    def test_impossible_returns_error(self, client, impossible_payload):
-        resp = client.post("/api/v1/layouts/generate", json=impossible_payload)
+    @pytest.mark.parametrize(
+        "filename",
+        [
+            "rectangle.json",
+            "pentagon.json",
+            "hexagon.json",
+            "trapezoid.json",
+            "irregular.json",
+            "parking.json",
+            "multi_candidate.json",
+        ],
+    )
+    def test_sample_files_generate_valid_response(self, client, filename):
+        import json
+        from pathlib import Path
+        path = Path("samples") / filename
+        with open(path, "r") as f:
+            payload = json.load(f)
+
+        resp = client.post("/api/v1/layouts/generate", json=payload)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["candidates"]) >= 1
+        assert data["best_candidate_id"] == data["candidates"][0]["id"]
+        for c in data["candidates"]:
+            assert "strategy" in c
+            assert "variation" in c
+            assert len(c["rooms"]) >= 1
+            assert len(c["walls"]) >= 1
+            assert "measurements" in c
+            assert "metrics" in c
+            assert "score" in c
+
+    def test_impossible_sample_fails_with_422(self, client):
+        import json
+        from pathlib import Path
+        path = Path("samples") / "impossible.json"
+        with open(path, "r") as f:
+            payload = json.load(f)
+
+        resp = client.post("/api/v1/layouts/generate", json=payload)
         assert resp.status_code == 422
         data = resp.json()
-        assert "error_code" in data
         assert data["error_code"] == "LAYOUT_INFEASIBLE"

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set, Tuple
 
 # ─────────────────────────────────────────────
 # UNIT CONVERSION
@@ -149,7 +149,7 @@ ROOM_TYPE_DEFAULTS: Dict[str, RoomTypeDefaults] = {
         preferred_aspect_ratio=1.8, max_aspect_ratio=3.0,
         requires_exterior_wall=True, requires_natural_light=True,
         requires_ventilation=True,
-        default_door_width_m=1.0, default_window_width_m=1.5,
+        default_door_width_m=0.9, default_window_width_m=1.5,
     ),
     "dining": RoomTypeDefaults(
         min_area_sqft=100, min_width_ft=8, min_length_ft=10,
@@ -236,7 +236,69 @@ PARKING_CLEARANCE_M: float = 0.5
 
 MAIN_ENTRANCE_WIDTH_M: float = 1.2
 DEFAULT_DOOR_WIDTH_M: float = 0.9
-MIN_WALL_FOR_DOOR_M: float = 1.2            # minimum wall length to place a door
+TOILET_DOOR_WIDTH_M: float = 0.75
+PARKING_SHUTTER_WIDTH_M: float = 2.4
+DOOR_WALL_CLEARANCE_M: float = 0.30          # clearance: wall >= door_width + 0.30m
+MIN_WALL_FOR_DOOR_M: float = 1.05            # minimum wall length to place any door (toilet 0.75 + 0.30)
+MAX_CONVENIENCE_DOORS: int = 2               # at most 2 extra convenience doors beyond MST
+
+# Priority 1: Editable door adjacency classification
+# FORBIDDEN (cost = infinity, never place a door)
+DOOR_ADJACENCY_FORBIDDEN: Set[Tuple[str, str]] = {
+    ("toilet", "toilet"),
+    ("toilet", "kitchen"),
+    ("toilet", "dining"),
+    ("bedroom", "bedroom"),
+    ("bedroom", "kitchen"),
+    ("parking", "toilet"),
+    ("parking", "bedroom"),
+    # Aliases
+    ("bathroom", "bathroom"),
+    ("toilet", "bathroom"),
+    ("bathroom", "kitchen"),
+    ("bathroom", "dining"),
+    ("master_bedroom", "bedroom"),
+    ("master_bedroom", "kitchen"),
+    ("parking", "bathroom"),
+    ("parking", "master_bedroom"),
+}
+
+# PREFERRED (cost = 1)
+DOOR_ADJACENCY_PREFERRED: Set[Tuple[str, str]] = {
+    ("living", "dining"),
+    ("living", "corridor"),
+    ("dining", "kitchen"),
+    ("corridor", "bedroom"),
+    ("corridor", "master_bedroom"),
+    ("corridor", "toilet"),
+    ("corridor", "bathroom"),
+    ("corridor", "living"),
+    ("foyer", "living"),
+    ("foyer", "corridor"),
+}
+
+# ACCEPTABLE (cost = 3)
+DOOR_ADJACENCY_ACCEPTABLE: Set[Tuple[str, str]] = {
+    ("living", "kitchen"),
+    ("living", "bedroom"),          # only if no corridor exists in this candidate
+    ("living", "master_bedroom"),   # only if no corridor exists in this candidate
+    ("living", "toilet"),
+    ("living", "bathroom"),
+    ("dining", "corridor"),
+    ("parking", "kitchen"),         # service access — allow at most ONE such door
+    ("foyer", "dining"),
+    ("foyer", "kitchen"),
+}
+
+# DISCOURAGED (cost = 8)
+DOOR_ADJACENCY_DISCOURAGED: Set[Tuple[str, str]] = {
+    ("dining", "bedroom"),
+    ("dining", "master_bedroom"),
+    ("parking", "living"),
+    ("parking", "dining"),
+    ("kitchen", "utility"),
+    ("kitchen", "store"),
+}
 
 # ─────────────────────────────────────────────
 # WINDOW DEFAULTS
@@ -278,22 +340,42 @@ PREFERRED_ZONE_ADJACENCY: List[tuple] = [
     ("private", "service"),
 ]
 
+# Canonical preferred room adjacency pairs for adjacency scoring
+PREFERRED_ADJACENCY_PAIRS: List[Tuple[str, str]] = [
+    ("kitchen", "dining"),
+    ("living", "dining"),
+    ("living", "kitchen"),
+    ("bedroom", "toilet"),
+    ("master_bedroom", "toilet"),
+    ("master_bedroom", "dressing"),
+    ("bedroom", "dressing"),
+    ("foyer", "living"),
+    ("kitchen", "utility"),
+    ("kitchen", "store"),
+    ("living", "corridor"),
+    ("bedroom", "corridor"),
+    ("master_bedroom", "corridor"),
+    ("toilet", "corridor"),
+    ("bathroom", "corridor"),
+]
+
 # ─────────────────────────────────────────────
 # SCORING WEIGHTS
 # ─────────────────────────────────────────────
 
 SCORE_WEIGHTS: Dict[str, float] = {
-    "buildable_utilization": 0.15,
-    "building_coverage": 0.05,
-    "aspect_quality": 0.15,
-    "adjacency": 0.15,
-    "circulation": 0.15,
+    "adjacency": 0.20,
+    "circulation": 0.20,
+    "aspect_quality": 0.12,
+    "buildable_utilization": 0.12,
     "natural_light": 0.10,
-    "ventilation": 0.05,
+    "ventilation": 0.10,
+    "dead_space_efficiency": 0.06,
     "parking_accessibility": 0.05,
-    "dead_space_efficiency": 0.05,
-    "constraint_compliance": 0.10,
+    "building_coverage": 0.05,
+    "constraint_compliance": 0.00,
 }
+
 
 # Dead space penalty weights
 DEAD_SPACE_PENALTIES: Dict[str, float] = {

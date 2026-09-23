@@ -21,6 +21,7 @@ from .output_models import (
     ParkingOutput,
     DeadSpaceOutput,
     CirculationOutput,
+    CirculationBreakdown,
     MeasurementsOutput,
     MetricsOutput,
     ScoreBreakdown,
@@ -38,7 +39,7 @@ __all__ = [
     "LayoutMetadata", "PlotOutput", "BuildableAreaOutput",
     "RoomOutput", "WallSegment", "DoorOutput", "WindowOutput",
     "EntranceOutput", "ParkingOutput", "DeadSpaceOutput",
-    "CirculationOutput", "MeasurementsOutput", "MetricsOutput",
+    "CirculationOutput", "CirculationBreakdown", "MeasurementsOutput", "MetricsOutput",
     "ScoreBreakdown", "ValidationItem", "ValidationOutput",
     "CandidateLayout", "LayoutResponse", "EngineErrorResponse",
 ]

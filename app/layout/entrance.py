@@ -1,8 +1,14 @@
 """
 Entrance placement on the buildable boundary.
 
-Places the main entrance on the requested side (front/back/left/right)
-of the buildable polygon, finding the best exterior wall to host it.
+Priority 2 (Architectural Logic):
+  - Select entrance room BEFORE door graph is built.
+  - Eligible room types (in preference order): foyer > living > corridor > dining
+  - NEVER eligible: bedroom, toilet, kitchen, parking, bathroom, store, utility,
+    dressing, master_bedroom, study
+  - Selection is based on which eligible room has the longest shared boundary
+    segment on the road-facing side of the buildable polygon.
+  - If no eligible room touches the road-facing side, emit ENTRANCE_NO_ELIGIBLE_ROOM.
 """
 from __future__ import annotations
 
@@ -11,11 +17,38 @@ import logging
 from typing import List, Dict, Optional, Tuple
 
 from shapely.geometry import Polygon, LineString, Point as ShapelyPoint
+from shapely.ops import linemerge
 
 from ..config import MAIN_ENTRANCE_WIDTH_M, ZONE_MAP
 from ..geometry.polygon_utils import polygon_edges, line_bearing
 
 logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────
+# PRIORITY 2: Entrance-eligible room types
+# Lower rank number = higher preference
+# ─────────────────────────────────────────────
+
+ENTRANCE_ROOM_PRIORITY: Dict[str, int] = {
+    "foyer":    1,
+    "living":   2,
+    "corridor": 3,
+    "dining":   4,
+}
+
+# Room types that are NEVER allowed to host the main entrance.
+ENTRANCE_INELIGIBLE_TYPES = frozenset({
+    "bedroom",
+    "master_bedroom",
+    "toilet",
+    "bathroom",
+    "kitchen",
+    "parking",
+    "store",
+    "utility",
+    "dressing",
+    "study",
+})
 
 
 def _side_to_bearing_range(
@@ -61,6 +94,76 @@ def _bearing_in_range(bearing: float, lo: float, hi: float) -> bool:
         return bearing >= lo or bearing <= hi
 
 
+
+def _road_side_boundary(
+    inner_polygon: Polygon,
+    side: str,
+    facing: str,
+) -> Optional[LineString]:
+    """
+    Return a merged LineString representing all boundary edges of
+    inner_polygon that face the requested road side.
+
+    Returns None if no suitable edges exist.
+    """
+    lo, hi = _side_to_bearing_range(side, facing)
+    road_edges = []
+
+    for edge in polygon_edges(inner_polygon):
+        bearing = line_bearing(edge)
+        edge_normal = (bearing + 90) % 360
+        if _bearing_in_range(edge_normal, lo, hi) or _bearing_in_range(bearing, lo, hi):
+            road_edges.append(edge)
+
+    if not road_edges:
+        return None
+
+    merged = linemerge(road_edges)
+    return merged
+
+
+def _shared_road_length(
+    room_poly: Polygon,
+    road_boundary: LineString,
+    buffer_m: float = 0.05,
+) -> float:
+    """
+    Return the total length of room_poly's boundary that lies on the
+    road-facing boundary (within buffer_m tolerance).
+    """
+    try:
+        contact = room_poly.boundary.intersection(road_boundary.buffer(buffer_m))
+        if contact.is_empty:
+            return 0.0
+        return contact.length
+    except Exception:
+        return 0.0
+
+
+def _midpoint_on_shared_boundary(
+    room_poly: Polygon,
+    road_boundary: LineString,
+    buffer_m: float = 0.05,
+) -> Optional[dict]:
+    """
+    Return the midpoint of the shared boundary segment between room_poly
+    and road_boundary, as {"x": ..., "y": ...}.
+    """
+    try:
+        contact = room_poly.boundary.intersection(road_boundary.buffer(buffer_m))
+        if contact.is_empty:
+            return None
+        # Get longest component when result is a collection
+        if hasattr(contact, "geoms"):
+            contact = max(contact.geoms, key=lambda g: g.length)
+        if contact.length < 1e-4:
+            return None
+        mid = contact.interpolate(0.5, normalized=True)
+        return {"x": round(mid.x, 4), "y": round(mid.y, 4)}
+    except Exception:
+        return None
+
+
 def find_entrance_wall(
     inner_polygon: Polygon,
     room_polygons: Dict[str, Polygon],
@@ -70,102 +173,115 @@ def find_entrance_wall(
     entrance_width: float = MAIN_ENTRANCE_WIDTH_M,
 ) -> Optional[dict]:
     """
-    Find the best exterior wall segment for entrance placement.
+    Find the best room and wall segment for entrance placement.
 
-    Priority:
-    1. Exterior wall on the requested side
-    2. Adjacent to a public room (living, dining, foyer)
-    3. Long enough to host the entrance
-
-    Returns:
-        dict with entrance data or None if no suitable wall found
+    Priority 2 logic:
+      1. Build road-facing boundary from inner_polygon edges.
+      2. For each room, measure shared boundary with road side.
+      3. Only eligible room types may host the entrance:
+             foyer > living > corridor > dining
+      4. Among eligible rooms, rank by ENTRANCE_ROOM_PRIORITY then by
+         shared boundary length (longer is better).
+      5. Return entrance dict with room_id, position, bearing, and edge.
+         Returns None if no eligible room found (caller must emit
+         ENTRANCE_NO_ELIGIBLE_ROOM validation error).
     """
-    lo, hi = _side_to_bearing_range(side, facing)
-    boundary_edges = polygon_edges(inner_polygon)
+    road_boundary = _road_side_boundary(inner_polygon, side, facing)
 
-    candidates = []
-
-    for edge in boundary_edges:
-        if edge.length < entrance_width:
-            continue
-
-        bearing = line_bearing(edge)
-        # We want edges perpendicular to the side direction
-        # An edge on the "front" side has a bearing ~perpendicular to front facing
-        edge_normal = (bearing + 90) % 360
-
-        if _bearing_in_range(edge_normal, lo, hi) or _bearing_in_range(bearing, lo, hi):
-            # Find which room this edge is closest to
-            midpoint = edge.interpolate(0.5, normalized=True)
-            best_room = None
-            best_dist = float("inf")
-            is_public = False
-
-            for room_id, room_poly in room_polygons.items():
-                if room_poly.is_empty or not room_poly.is_valid:
-                    continue
-                try:
-                    dist = room_poly.distance(midpoint)
-                    if dist < best_dist:
-                        best_dist = dist
-                        best_room = room_id
-                        rtype = room_types.get(room_id, "")
-                        is_public = ZONE_MAP.get(rtype, "") == "public"
-                except Exception:
-                    continue
-
-            candidates.append({
-                "edge": edge,
-                "bearing": bearing,
-                "room_id": best_room,
-                "is_public": is_public,
-                "length": edge.length,
-            })
-
-    if not candidates:
-        # Fallback: try any boundary edge long enough
-        for edge in boundary_edges:
-            if edge.length >= entrance_width:
-                midpoint = edge.interpolate(0.5, normalized=True)
-                best_room = None
-                best_dist = float("inf")
-                for room_id, room_poly in room_polygons.items():
-                    if room_poly.is_empty or not room_poly.is_valid:
-                        continue
-                    try:
-                        dist = room_poly.distance(midpoint)
-                        if dist < best_dist:
-                            best_dist = dist
-                            best_room = room_id
-                    except Exception:
-                        continue
-
-                candidates.append({
-                    "edge": edge,
-                    "bearing": line_bearing(edge),
-                    "room_id": best_room,
-                    "is_public": False,
-                    "length": edge.length,
-                })
-
-    if not candidates:
+    if road_boundary is None:
+        logger.warning(
+            "No road-facing boundary edges found for side='%s' facing='%s'", side, facing
+        )
         return None
 
-    # Sort: prefer public-adjacent, then longest
-    candidates.sort(key=lambda c: (-c["is_public"], -c["length"]))
-    best = candidates[0]
+    # ── Collect candidates by eligible room type ───────────────────
+    eligible: List[dict] = []
+    ineligible_on_road: List[str] = []  # rooms that touch road but are wrong type
 
-    # Place entrance at midpoint of edge
-    edge = best["edge"]
-    mid = edge.interpolate(0.5, normalized=True)
+    for room_id, room_poly in room_polygons.items():
+        if room_poly.is_empty or not room_poly.is_valid:
+            continue
+
+        rtype = room_types.get(room_id, "")
+        shared_len = _shared_road_length(room_poly, road_boundary)
+
+        if shared_len < entrance_width:
+            # Room wall too short for entrance, or doesn't touch road side
+            continue
+
+        if rtype in ENTRANCE_INELIGIBLE_TYPES:
+            ineligible_on_road.append(room_id)
+            logger.debug(
+                "Room %s (type=%s) touches road side (%.2fm) but is ineligible for entrance",
+                room_id, rtype, shared_len,
+            )
+            continue
+
+        priority = ENTRANCE_ROOM_PRIORITY.get(rtype)
+        if priority is None:
+            # Unknown / unlisted room type — treat as lowest-priority eligible
+            priority = 99
+
+        eligible.append({
+            "room_id": room_id,
+            "room_type": rtype,
+            "priority": priority,
+            "shared_length": shared_len,
+        })
+
+    if not eligible:
+        if ineligible_on_road:
+            logger.warning(
+                "Entrance side '%s': only ineligible rooms touch road boundary: %s",
+                side, ineligible_on_road,
+            )
+        else:
+            logger.warning(
+                "Entrance side '%s': no rooms touch road boundary with sufficient width",
+                side,
+            )
+        return None
+
+    # ── Sort: lower priority number first, then longer shared boundary ─
+    eligible.sort(key=lambda c: (c["priority"], -c["shared_length"]))
+    best = eligible[0]
+    best_room_poly = room_polygons[best["room_id"]]
+
+    # ── Compute midpoint position on shared road boundary ─────────
+    position = _midpoint_on_shared_boundary(best_room_poly, road_boundary)
+    if position is None:
+        logger.error(
+            "Could not compute midpoint for entrance room %s", best["room_id"]
+        )
+        return None
+
+    # ── Compute door bearing (inward-facing from road boundary) ───
+    try:
+        if hasattr(road_boundary, "geoms"):
+            # MultiLineString — use the segment closest to our position
+            pos_pt = ShapelyPoint(position["x"], position["y"])
+            road_seg = min(road_boundary.geoms, key=lambda g: g.distance(pos_pt))
+        else:
+            road_seg = road_boundary
+        bearing = line_bearing(road_seg)
+    except Exception:
+        bearing = 0.0
+
+    logger.info(
+        "Entrance placed on room %s (type=%s, priority=%d, shared=%.2fm)",
+        best["room_id"], best["room_type"], best["priority"], best["shared_length"],
+    )
 
     return {
-        "position": {"x": round(mid.x, 4), "y": round(mid.y, 4)},
+        "position": position,
         "width": entrance_width,
         "side": side,
         "room_id": best["room_id"],
-        "direction": f"{best['bearing']:.0f}deg",
-        "edge": edge,
+        "direction": f"{bearing:.0f}deg",
+        "edge": road_boundary,
+        # Diagnostic fields (not in output schema)
+        "_entrance_room_type": best["room_type"],
+        "_entrance_priority": best["priority"],
     }
 
 
@@ -187,7 +303,8 @@ def generate_entrance(
         facing:          plot facing direction
 
     Returns:
-        Entrance dict or None
+        Entrance dict or None.  When None, the caller should emit
+        ENTRANCE_NO_ELIGIBLE_ROOM as a hard validation error.
     """
     side = entrance_config.get("side", "front")
     width = entrance_config.get("width", MAIN_ENTRANCE_WIDTH_M)

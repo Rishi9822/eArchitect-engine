@@ -183,6 +183,15 @@ class DeadSpaceOutput(BaseModel):
 # CIRCULATION
 # ─────────────────────────────────────────────
 
+class CirculationBreakdown(BaseModel):
+    """Sub-scores contributing to circulation quality."""
+    privacy_depth: float = 1.0
+    public_private_separation: float = 1.0
+    path_efficiency: float = 1.0
+    service_isolation: float = 1.0
+    corridor_presence: float = 1.0
+
+
 class CirculationOutput(BaseModel):
     """Room connectivity analysis."""
     connected: bool = False
@@ -191,6 +200,9 @@ class CirculationOutput(BaseModel):
     dead_ends: int = 0
     graph_edges: int = 0
     score: float = 0.0
+    breakdown: Optional[Dict[str, float]] = None
+    circulation_breakdown: Optional[Dict[str, float]] = None
+
 
 
 # ─────────────────────────────────────────────
@@ -253,6 +265,7 @@ class ScoreBreakdown(BaseModel):
     building_coverage: float = 0.0
     aspect_quality: float = 0.0
     adjacency: float = 0.0
+    adjacency_breakdown: Optional[List[Dict[str, Any]]] = None
     circulation: float = 0.0
     natural_light: float = 0.0
     ventilation: float = 0.0
@@ -260,6 +273,7 @@ class ScoreBreakdown(BaseModel):
     dead_space_efficiency: float = 0.0
     constraint_compliance: float = 0.0
     overall: float = 0.0
+
 
 
 # ─────────────────────────────────────────────
@@ -299,11 +313,15 @@ class CandidateLayout(BaseModel):
     parking: List[ParkingOutput]
     dead_spaces: List[DeadSpaceOutput]
     circulation: CirculationOutput
+    circulation_breakdown: Optional[Dict[str, float]] = None
     measurements: MeasurementsOutput
     metrics: MetricsOutput
     score: ScoreBreakdown
     validation: ValidationOutput
     corridors: List[CorridorOutput] = Field(default_factory=list)
+    # Populated only for rejected candidates — the first hard-gate error code
+    # that caused rejection, or BELOW_DIVERSITY_THRESHOLD for valid-but-pruned.
+    rejection_reason: Optional[str] = None
 
 
 # ─────────────────────────────────────────────
@@ -325,6 +343,7 @@ class LayoutResponse(BaseModel):
 
     # Timing breakdown (milliseconds)
     timing: Optional[Dict[str, float]] = None
+    rejected_candidates: List[CandidateLayout] = Field(default_factory=list)
 
 
 # ─────────────────────────────────────────────

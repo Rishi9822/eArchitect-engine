@@ -126,6 +126,9 @@ def score_layout(
     circulation_data: dict,
     validation_warnings: List[dict],
     validation_errors: List[dict],
+    doors: Optional[List[dict]] = None,
+    corridors: Optional[List[dict]] = None,
+    corridor_polygons: Optional[List[Polygon]] = None,
 ) -> dict:
     """
     Compute comprehensive quality scores for a generated layout.
@@ -137,7 +140,14 @@ def score_layout(
     util = _score_buildable_utilization(room_polygons_list, inner_polygon)
     coverage = _score_building_coverage(room_polygons_list, plot_polygon)
     aspect = _score_aspect_quality(room_polygons_dict, room_types)
-    adj = score_adjacency(room_polygons_dict, room_types, zone_polygons)
+    adj, adjacency_breakdown = score_adjacency(
+        room_polygons_dict, room_types,
+        zone_polygons=zone_polygons,
+        doors=doors,
+        corridors=corridors,
+        corridor_polygons=corridor_polygons,
+        return_breakdown=True,
+    )
     circ = circulation_data.get("score", 0.5)
     light = score_natural_light(room_polygons_dict, room_types, inner_polygon, windows)
     vent = score_ventilation(room_polygons_dict, room_types, inner_polygon, windows)
@@ -168,6 +178,7 @@ def score_layout(
         "building_coverage": round(coverage, 4),
         "aspect_quality": round(aspect, 4),
         "adjacency": round(adj, 4),
+        "adjacency_breakdown": adjacency_breakdown,
         "circulation": round(circ, 4),
         "natural_light": round(light, 4),
         "ventilation": round(vent, 4),
@@ -184,3 +195,4 @@ def score_layout(
         compliance, overall,
     )
     return breakdown
+

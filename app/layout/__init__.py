@@ -15,4 +15,9 @@ from .entrance import generate_entrance
 from .doors import generate_doors
 from .windows import generate_windows
 from .parking import generate_parking_entities
-from .circulation import build_adjacency_graph, analyze_circulation
+from .circulation import (
+    build_adjacency_graph,
+    analyze_circulation,
+    compute_circulation_score,
+    compute_shortest_paths,
+)

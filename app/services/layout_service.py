@@ -22,6 +22,7 @@ from ..config import (
     FT_TO_M,
     ZONE_MAP,
     DEAD_SPACE_MIN_AREA_SQM,
+    DOOR_ADJACENCY_FORBIDDEN,
     get_room_defaults,
 )
 from ..models.common import Coordinate
@@ -54,6 +55,7 @@ from ..geometry.polygon_utils import (
     min_dimension,
     max_dimension,
     polygon_exterior_contact,
+    polygons_share_boundary,
 )
 from ..geometry.measurements import compute_measurements
 from ..layout.bsp import (
@@ -65,7 +67,7 @@ from ..layout.bsp import (
 from ..layout.room_assignment import validate_room_assignment
 from ..layout.constraints import check_feasibility
 from ..layout.entrance import generate_entrance
-from ..layout.doors import generate_doors
+from ..layout.doors import generate_doors, _matches
 from ..layout.windows import generate_windows
 from ..layout.parking import generate_parking_entities
 from ..layout.circulation import build_adjacency_graph, analyze_circulation
@@ -245,7 +247,21 @@ def _process_single_candidate(
     )
     if entrance_data:
         entrance_data["wall_id"] = _find_wall_id(entrance_data["position"])
+    else:
+        # Priority 2: no eligible room (foyer/living/corridor/dining) touched the
+        # road-facing boundary — this is a hard architectural violation.
+        validation_errors.append({
+            "code": "ENTRANCE_NO_ELIGIBLE_ROOM",
+            "severity": "error",
+            "message": (
+                "No eligible room (foyer, living, corridor, or dining) has sufficient "
+                f"road-side wall on side '{entrance_config.get('side', 'front')}' "
+                "to host the main entrance."
+            ),
+            "details": {"side": entrance_config.get("side", "front")},
+        })
     timings["entrance_ms"] = (time.perf_counter() - t0) * 1000
+
 
     # ── Re-build corridor entities with entrance proximity ────────
     if corridor_polys:
@@ -263,6 +279,14 @@ def _process_single_candidate(
     doors_raw = generate_doors(all_polygons_dict, all_types_dict, entrance_room_id)
     for d in doors_raw:
         d["wall_id"] = _find_wall_id(d["position"])
+    if getattr(doors_raw, "unreachable_rooms", None):
+        for ur in doors_raw.unreachable_rooms:
+            validation_errors.append({
+                "code": "ROOM_UNREACHABLE",
+                "severity": "error",
+                "message": f"Room '{ur}' is unreachable via architecturally valid doors (only forbidden connections available)",
+                "details": {"room_id": ur},
+            })
     timings["doors_ms"] = (time.perf_counter() - t0) * 1000
 
     # ── Windows ──────────────────────────────────────────────────
@@ -307,8 +331,22 @@ def _process_single_candidate(
     )
     circulation_data = analyze_circulation(
         graph, list(room_polygons.keys()), entrance_room_id,
+        room_types=room_types,
+        corridors=corridors_data,
     )
     timings["circulation_ms"] = (time.perf_counter() - t0) * 1000
+
+    if not circulation_data.get("connected", True):
+        circulation_data["score"] = 0.0
+        validation_errors.append({
+            "code": "CIRCULATION_DISCONNECTED",
+            "severity": "error",
+            "message": "One or more rooms are unreachable from the entrance via the door graph.",
+            "details": {
+                "reachable_rooms": circulation_data.get("reachable_rooms", 0),
+                "total_rooms": circulation_data.get("total_rooms", 0),
+            },
+        })
 
     # ── Build room output list ───────────────────────────────────
     rooms_output = []
@@ -338,6 +376,9 @@ def _process_single_candidate(
         circulation_data=circulation_data,
         validation_warnings=validation_warnings,
         validation_errors=validation_errors,
+        doors=doors_raw,
+        corridors=corridors_data,
+        corridor_polygons=corridor_polys,
     )
     timings["scoring_ms"] = (time.perf_counter() - t0) * 1000
 
@@ -374,10 +415,112 @@ def _process_single_candidate(
         "ROOM_VALID_GEOMETRY", "ROOM_INSIDE_BOUNDARY",
         "ROOM_DIMENSION_MINIMUM", "ROOM_ASPECT_RATIO",
         "NATURAL_LIGHT", "VENTILATION", "PARKING_DIMENSIONS",
+        "CIRCULATION_CONNECTED",
+        "ENTRANCE_ROOM_TYPE",
+        "NO_FORBIDDEN_DOORS",
+        "HABITABLE_ROOM_WINDOW",
+        "TOILET_VENTILATION",
+        "PARKING_EXTERIOR_ACCESS",
     ]
 
+    # ── Hard Gate 1: Entrance room type ──────────────────────────
+    ENTRANCE_FORBIDDEN_TYPES = {"bedroom", "master_bedroom", "toilet", "bathroom", "kitchen", "parking"}
+    if entrance_data:
+        ent_rtype = room_types.get(entrance_data.get("room_id", ""), "").lower()
+        if ent_rtype in ENTRANCE_FORBIDDEN_TYPES:
+            validation_errors.append({
+                "code": "ENTRANCE_ROOM_TYPE",
+                "severity": "error",
+                "message": (
+                    f"Entrance is assigned to room type '{ent_rtype}' "
+                    f"(id: {entrance_data.get('room_id')}), which is architecturally invalid."
+                ),
+                "details": {"room_id": entrance_data.get("room_id"), "room_type": ent_rtype},
+            })
+
+    # ── Hard Gate 2: No FORBIDDEN doors ──────────────────────────
+    for door in doors_raw:
+        t_a = all_types_dict.get(door.get("from_room", ""), "").lower()
+        t_b = all_types_dict.get(door.get("to_room", ""), "").lower()
+        is_forbidden = _matches(DOOR_ADJACENCY_FORBIDDEN, t_a, t_b)
+        if not is_forbidden:
+            zone_a = ZONE_MAP.get(t_a, "")
+            zone_b = ZONE_MAP.get(t_b, "")
+            if zone_a == "private" and zone_b == "private" and t_a != "corridor" and t_b != "corridor":
+                is_forbidden = True
+        if is_forbidden:
+            validation_errors.append({
+                "code": "NO_FORBIDDEN_DOORS",
+                "severity": "error",
+                "message": (
+                    f"Forbidden door {door['id']} connects '{door['from_room']}' ({t_a}) "
+                    f"↔ '{door['to_room']}' ({t_b})."
+                ),
+                "details": {"door_id": door["id"], "from_type": t_a, "to_type": t_b},
+            })
+            break  # one violation is enough to invalidate
+
+    # ── Hard Gate 3: Habitable rooms must have windows ────────────
+    HABITABLE_TYPES = {"living", "dining", "bedroom", "master_bedroom", "study", "foyer", "lobby"}
+    for room_id, rtype in room_types.items():
+        if rtype.lower() in HABITABLE_TYPES and room_id not in rooms_with_windows:
+            validation_errors.append({
+                "code": "HABITABLE_ROOM_WINDOW",
+                "severity": "error",
+                "message": (
+                    f"Habitable room '{room_id}' (type: {rtype}) has no window. "
+                    "Habitable rooms must have natural light."
+                ),
+                "details": {"room_id": room_id, "room_type": rtype},
+            })
+
+    # ── Hard Gate 4: Toilets must have a window or ventilation path ─
+    for room_id, rtype in room_types.items():
+        if rtype.lower() in ("toilet", "bathroom"):
+            has_win = room_id in rooms_with_windows
+            has_vent_path = False
+            poly = room_polygons.get(room_id)
+            if poly:
+                if corridor_polys:
+                    for cpoly in corridor_polys:
+                        if polygons_share_boundary(poly, cpoly, min_length=0.1):
+                            has_vent_path = True
+                            break
+                if not has_vent_path:
+                    for other_id, other_type in room_types.items():
+                        if other_type.lower() in ("parking", "utility", "shaft", "corridor") and other_id in room_polygons:
+                            if polygons_share_boundary(poly, room_polygons[other_id], min_length=0.1):
+                                has_vent_path = True
+                                break
+            if not has_win and not has_vent_path:
+                validation_errors.append({
+                    "code": "TOILET_VENTILATION",
+                    "severity": "error",
+                    "message": (
+                        f"Toilet/bathroom '{room_id}' has neither a window nor a ventilation path. "
+                        "Toilets require an exterior window or mechanical ventilation via corridor/shaft."
+                    ),
+                    "details": {"room_id": room_id, "room_type": rtype},
+                })
+
+    # ── Hard Gate 5: Parking must have exterior-wall access ────────
+    for p in parking_entities:
+        if not p.get("road_access", True):
+            validation_errors.append({
+                "code": "PARKING_EXTERIOR_ACCESS",
+                "severity": "error",
+                "message": (
+                    f"Parking '{p['id']}' has no exterior wall access. "
+                    "Parking must be accessible from the road boundary."
+                ),
+                "details": {"parking_id": p["id"]},
+            })
+
+    is_candidate_valid = assignment_validation.valid and len(validation_errors) == 0
+
+
     validation_data = {
-        "valid": assignment_validation.valid,
+        "valid": is_candidate_valid,
         "warnings": validation_warnings,
         "errors": validation_errors,
         "constraints_checked": all_constraints_checked,
@@ -398,6 +541,11 @@ def _process_single_candidate(
     if entrance_data:
         entrances_output.append(entrance_data)
 
+    circulation_breakdown = (
+        circulation_data.get("circulation_breakdown")
+        or circulation_data.get("breakdown")
+    )
+
     return {
         "id": candidate_id,
         "strategy": strategy,
@@ -411,6 +559,7 @@ def _process_single_candidate(
         "parking": parking_entities,
         "dead_spaces": dead_spaces_raw,
         "circulation": circulation_data,
+        "circulation_breakdown": circulation_breakdown,
         "measurements": measurements_data,
         "metrics": metrics_data,
         "score": score_data,
@@ -548,11 +697,34 @@ def generate_layout_response(
         )
 
     # ── 8. Rank candidates ───────────────────────────────────────
+    valid_candidates = [c for c in processed_candidates if c.get("validation", {}).get("valid", True)]
+    candidates_to_rank = valid_candidates if valid_candidates else processed_candidates
     ranked = rank_candidates(
-        processed_candidates,
+        candidates_to_rank,
         target_count=request.candidate_count,
     )
     best_id = ranked[0]["id"]
+    ranked_ids = {c["id"] for c in ranked}
+
+    # Build rejected_candidates: every processed candidate NOT in the final ranked list,
+    # with a machine-readable rejection_reason explaining why it was excluded.
+    rejected_candidates = []
+    for c in processed_candidates:
+        if c["id"] in ranked_ids:
+            continue
+        is_valid = c.get("validation", {}).get("valid", True)
+        errors = c.get("validation", {}).get("errors", [])
+        if not is_valid and errors:
+            # Pick the first hard-gate error code as the primary reason
+            reason = errors[0].get("code", "VALIDATION_FAILED")
+        elif not is_valid:
+            reason = "VALIDATION_FAILED"
+        else:
+            # Valid candidate that was pruned by deduplication or diversity selection
+            reason = "BELOW_DIVERSITY_THRESHOLD"
+        c = dict(c)  # shallow copy so we don't mutate the processed list
+        c["rejection_reason"] = reason
+        rejected_candidates.append(c)
 
     # ── 9. Assemble response ─────────────────────────────────────
     total_ms = (time.perf_counter() - total_start) * 1000
@@ -588,6 +760,7 @@ def generate_layout_response(
         "candidates": ranked,
         "best_candidate_id": best_id,
         "timing": timings,
+        "rejected_candidates": rejected_candidates,
     }
 
     logger.info(

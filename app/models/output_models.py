@@ -63,6 +63,17 @@ class RoomOutput(BaseModel):
     min_length_m: float = 0.0
     has_exterior_wall: bool = False
     has_window: bool = False
+    has_ventilation: bool = True
+    mechanical_ventilation: bool = False
+    ventilation_shaft: bool = False
+    carpet_area_sqm: float = 0.0
+    carpet_area_sqft: float = 0.0
+    carpet_polygon: Optional[List[Coordinate]] = None
+    built_up_area_sqm: float = 0.0
+    built_up_area_sqft: float = 0.0
+    super_built_up_area_sqm: float = 0.0
+    super_built_up_area_sqft: float = 0.0
+    wall_footprint_area_sqm: float = 0.0
 
 
 # ─────────────────────────────────────────────
@@ -90,7 +101,7 @@ class WallSegment(BaseModel):
 class DoorOutput(BaseModel):
     """An internal or entrance door."""
     id: str
-    type: Literal["main_entrance", "internal", "service"]
+    type: Literal["main_entrance", "internal", "service", "shutter"]
     width: float
     position: Coordinate
     wall_id: Optional[str] = None
@@ -109,6 +120,8 @@ class WindowOutput(BaseModel):
     wall_id: Optional[str] = None
     position: Coordinate
     width: float
+    height_m: float = 1.2
+    area_sqm: float = 0.0
     type: Literal["standard", "ventilation", "picture"]
     sill_height_m: float = 0.9
     orientation: str = ""
@@ -238,6 +251,14 @@ class MeasurementsOutput(BaseModel):
     perimeter_m: float = 0.0
     corridor_area_sqm: float = 0.0
     corridor_area_sqft: float = 0.0
+    carpet_area_sqm: float = 0.0
+    carpet_area_sqft: float = 0.0
+    super_built_up_area_sqm: float = 0.0
+    super_built_up_area_sqft: float = 0.0
+    total_wall_footprint_area_sqm: float = 0.0
+    total_wall_footprint_area_sqft: float = 0.0
+    masonry_wall_volume_m3: float = 0.0
+    masonry_wall_volume_cuft: float = 0.0
 
 
 # ─────────────────────────────────────────────

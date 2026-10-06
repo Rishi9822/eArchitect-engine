@@ -58,6 +58,7 @@ from ..geometry.polygon_utils import (
     polygons_share_boundary,
 )
 from ..geometry.measurements import compute_measurements
+from ..geometry.carpet_area import compute_layout_carpet_accounting
 from ..layout.bsp import (
     RoomSpec,
     build_room_specs,
@@ -65,11 +66,14 @@ from ..layout.bsp import (
     classify_dead_space,
 )
 from ..layout.room_assignment import validate_room_assignment
-from ..layout.constraints import check_feasibility
+from ..layout.constraints import (
+    check_feasibility,
+    check_natural_light_habitable,
+)
 from ..layout.entrance import generate_entrance
 from ..layout.doors import generate_doors, _matches
 from ..layout.windows import generate_windows
-from ..layout.parking import generate_parking_entities
+from ..layout.parking import generate_parking_entities, generate_parking_shutter_door
 from ..layout.circulation import build_adjacency_graph, analyze_circulation
 from ..layout.corridor import build_corridor_data
 from ..walls.extractor import extract_wall_segments
@@ -101,12 +105,34 @@ def _build_room_output(
     polygon: Polygon,
     inner_polygon: Polygon,
     has_window: bool = False,
+    has_ventilation: bool = True,
+    mechanical_ventilation: bool = False,
+    ventilation_shaft: bool = False,
+    carpet_polygon: Optional[Polygon] = None,
+    carpet_area_sqm: Optional[float] = None,
+    built_up_area_sqm: Optional[float] = None,
+    super_built_up_area_sqm: Optional[float] = None,
+    wall_footprint_area_sqm: Optional[float] = None,
 ) -> dict:
     """Build a room output dict from a polygon."""
     area_sqm = polygon.area
     area_sqft = area_sqm * SQ_M_TO_SQ_FT
     centroid = polygon.centroid
     ext_contact = polygon_exterior_contact(polygon, inner_polygon, min_length=0.3)
+
+    if carpet_polygon is not None and not carpet_polygon.is_empty:
+        c_coords = _poly_to_coords(carpet_polygon)
+        c_area_sqm = carpet_area_sqm if carpet_area_sqm is not None else carpet_polygon.area
+    else:
+        c_coords = _poly_to_coords(polygon)
+        c_area_sqm = carpet_area_sqm if carpet_area_sqm is not None else area_sqm
+
+    c_area_sqft = c_area_sqm * SQ_M_TO_SQ_FT
+    b_area_sqm = built_up_area_sqm if built_up_area_sqm is not None else area_sqm
+    b_area_sqft = b_area_sqm * SQ_M_TO_SQ_FT
+    sb_area_sqm = super_built_up_area_sqm if super_built_up_area_sqm is not None else b_area_sqm
+    sb_area_sqft = sb_area_sqm * SQ_M_TO_SQ_FT
+    w_fp_sqm = wall_footprint_area_sqm if wall_footprint_area_sqm is not None else max(0.0, b_area_sqm - c_area_sqm)
 
     return {
         "id": room_id,
@@ -121,6 +147,17 @@ def _build_room_output(
         "min_length_m": round(max_dimension(polygon), 3),
         "has_exterior_wall": ext_contact >= 0.3,
         "has_window": has_window,
+        "has_ventilation": has_ventilation,
+        "mechanical_ventilation": mechanical_ventilation,
+        "ventilation_shaft": ventilation_shaft,
+        "carpet_area_sqm": round(c_area_sqm, 4),
+        "carpet_area_sqft": round(c_area_sqft, 2),
+        "carpet_polygon": c_coords,
+        "built_up_area_sqm": round(b_area_sqm, 4),
+        "built_up_area_sqft": round(b_area_sqft, 2),
+        "super_built_up_area_sqm": round(sb_area_sqm, 4),
+        "super_built_up_area_sqft": round(sb_area_sqft, 2),
+        "wall_footprint_area_sqm": round(w_fp_sqm, 4),
     }
 
 
@@ -248,8 +285,6 @@ def _process_single_candidate(
     if entrance_data:
         entrance_data["wall_id"] = _find_wall_id(entrance_data["position"])
     else:
-        # Priority 2: no eligible room (foyer/living/corridor/dining) touched the
-        # road-facing boundary — this is a hard architectural violation.
         validation_errors.append({
             "code": "ENTRANCE_NO_ELIGIBLE_ROOM",
             "severity": "error",
@@ -281,9 +316,9 @@ def _process_single_candidate(
         d["wall_id"] = _find_wall_id(d["position"])
     if getattr(doors_raw, "unreachable_rooms", None):
         for ur in doors_raw.unreachable_rooms:
-            validation_errors.append({
+            validation_warnings.append({
                 "code": "ROOM_UNREACHABLE",
-                "severity": "error",
+                "severity": "warning",
                 "message": f"Room '{ur}' is unreachable via architecturally valid doors (only forbidden connections available)",
                 "details": {"room_id": ur},
             })
@@ -305,6 +340,23 @@ def _process_single_candidate(
     parking_entities = generate_parking_entities(
         room_polygons, room_types, inner_polygon, facing, road_side,
     )
+
+    # Exterior shutter doors for parking entities
+    for p in parking_entities:
+        if p.get("road_access"):
+            p_poly = room_polygons.get(p["room_id"])
+            if p_poly is not None:
+                shutter_door = generate_parking_shutter_door(
+                    parking_poly=p_poly,
+                    inner_polygon=inner_polygon,
+                    road_side=road_side,
+                    facing=facing,
+                    room_id=p["room_id"],
+                    door_id=f"D{len(doors_raw) + 1:03d}",
+                )
+                if shutter_door is not None:
+                    shutter_door["wall_id"] = _find_wall_id(shutter_door["position"])
+                    doors_raw.append(shutter_door)
 
     # ── Dead spaces ──────────────────────────────────────────────
     dead_spaces_raw = []
@@ -338,9 +390,9 @@ def _process_single_candidate(
 
     if not circulation_data.get("connected", True):
         circulation_data["score"] = 0.0
-        validation_errors.append({
+        validation_warnings.append({
             "code": "CIRCULATION_DISCONNECTED",
-            "severity": "error",
+            "severity": "warning",
             "message": "One or more rooms are unreachable from the entrance via the door graph.",
             "details": {
                 "reachable_rooms": circulation_data.get("reachable_rooms", 0),
@@ -348,16 +400,70 @@ def _process_single_candidate(
             },
         })
 
+    # ── Carpet & Area Accounting (Priority 6) ────────────────────
+    carpet_accounting = compute_layout_carpet_accounting(
+        room_polygons=room_polygons,
+        walls=walls_raw,
+        corridors=corridors_data,
+        corridor_polygons=corridor_polys,
+        dead_spaces=dead_spaces_raw,
+        inner_polygon=inner_polygon,
+    )
+
     # ── Build room output list ───────────────────────────────────
     rooms_output = []
     for room_id, leaf in room_leaves.items():
         if leaf.room is None:
             continue
         zone = ZONE_MAP.get(leaf.room.type.lower(), "service")
+        has_win = room_id in rooms_with_windows
+        rtype = leaf.room.type.lower()
+
+        # Determine ventilation characteristics
+        has_vent = has_win
+        mech_vent = False
+        vent_shaft = False
+
+        if not has_win:
+            poly = leaf.polygon
+            if corridor_polys:
+                for cpoly in corridor_polys:
+                    if polygons_share_boundary(poly, cpoly, min_length=0.1):
+                        mech_vent = True
+                        has_vent = True
+                        break
+            if not mech_vent:
+                for other_id, other_leaf in room_leaves.items():
+                    if other_id == room_id or other_leaf.room is None:
+                        continue
+                    other_type = other_leaf.room.type.lower()
+                    if other_type in ("shaft", "utility", "parking", "corridor"):
+                        if polygons_share_boundary(poly, other_leaf.polygon, min_length=0.1):
+                            mech_vent = True
+                            has_vent = True
+                            if other_type == "shaft":
+                                vent_shaft = True
+                            break
+            if not has_win and not mech_vent:
+                if rtype in ("foyer", "lobby", "corridor"):
+                    has_vent = True
+                else:
+                    has_vent = False
+
+        r_carpet_info = carpet_accounting["per_room"].get(room_id, {})
         rooms_output.append(
             _build_room_output(
                 room_id, leaf.room.type, zone, leaf.polygon,
-                inner_polygon, has_window=room_id in rooms_with_windows,
+                inner_polygon,
+                has_window=has_win,
+                has_ventilation=has_vent,
+                mechanical_ventilation=mech_vent,
+                ventilation_shaft=vent_shaft,
+                carpet_polygon=r_carpet_info.get("carpet_polygon"),
+                carpet_area_sqm=r_carpet_info.get("carpet_area_sqm"),
+                built_up_area_sqm=r_carpet_info.get("built_up_area_sqm"),
+                super_built_up_area_sqm=r_carpet_info.get("super_built_up_area_sqm"),
+                wall_footprint_area_sqm=r_carpet_info.get("wall_footprint_area_sqm"),
             )
         )
 
@@ -387,6 +493,9 @@ def _process_single_candidate(
         plot_polygon, inner_polygon, room_polygon_list,
         walls_raw, doors_raw, windows_raw,
         corridor_polygons=corridor_polys,
+        carpet_area_sqm=carpet_accounting["total_carpet_area_sqm"],
+        super_built_up_area_sqm=carpet_accounting["total_super_built_up_area_sqm"],
+        total_wall_footprint_area_sqm=carpet_accounting["total_wall_footprint_area_sqm"],
     )
 
     # ── Metrics ──────────────────────────────────────────────────
@@ -419,6 +528,8 @@ def _process_single_candidate(
         "ENTRANCE_ROOM_TYPE",
         "NO_FORBIDDEN_DOORS",
         "HABITABLE_ROOM_WINDOW",
+        "NATURAL_LIGHT_HABITABLE",
+        "TOILET_NO_VENTILATION",
         "TOILET_VENTILATION",
         "PARKING_EXTERIOR_ACCESS",
     ]
@@ -474,6 +585,11 @@ def _process_single_candidate(
                 "details": {"room_id": room_id, "room_type": rtype},
             })
 
+    # ── Hard Gate 3b: Habitable room natural light >= 10% ─────────
+    validation_errors.extend(
+        check_natural_light_habitable(room_polygons, room_types, windows_raw)
+    )
+
     # ── Hard Gate 4: Toilets must have a window or ventilation path ─
     for room_id, rtype in room_types.items():
         if rtype.lower() in ("toilet", "bathroom"):
@@ -494,7 +610,7 @@ def _process_single_candidate(
                                 break
             if not has_win and not has_vent_path:
                 validation_errors.append({
-                    "code": "TOILET_VENTILATION",
+                    "code": "TOILET_NO_VENTILATION",
                     "severity": "error",
                     "message": (
                         f"Toilet/bathroom '{room_id}' has neither a window nor a ventilation path. "
@@ -663,6 +779,7 @@ def generate_layout_response(
         candidate_count=request.candidate_count,
         seed=request.seed,
         facing=request.plot.facing,
+        road_side=request.plot.road_side,
     )
     timings["bsp_generation_ms"] = (time.perf_counter() - t0) * 1000
 

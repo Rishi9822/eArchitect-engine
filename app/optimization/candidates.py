@@ -41,6 +41,7 @@ def generate_candidates(
     candidate_count: int = DEFAULT_CANDIDATE_COUNT,
     seed: Optional[int] = None,
     facing: str = "north",
+    road_side: str = "front",
 ) -> List[Dict]:
     """
     Generate an internal pool of layout candidates using diverse strategy-variation pairs.
@@ -55,6 +56,7 @@ def generate_candidates(
         candidate_count: number of candidates requested by caller
         seed:            base random seed (optional)
         facing:          plot facing direction
+        road_side:       plot road side ("front", "back", "left", "right")
 
     Returns:
         list of candidate dicts with BSP results, strategy, and variation
@@ -92,6 +94,7 @@ def generate_candidates(
                 rng=rng,
                 facing=facing,
                 variation=variation,
+                road_side=road_side,
             )
 
             result["seed"] = candidate_seed

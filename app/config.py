@@ -24,6 +24,8 @@ SQ_FT_TO_SQ_M: float = 0.092903      # 1 sq ft in sq metres
 SQ_M_TO_SQ_FT: float = 1.0 / SQ_FT_TO_SQ_M  # ~10.7639
 FT_TO_M: float = 0.3048               # 1 foot in metres
 M_TO_FT: float = 1.0 / FT_TO_M       # ~3.28084
+M3_TO_CU_FT: float = (1.0 / FT_TO_M) ** 3  # ~35.3147 cu ft in 1 cubic metre
+CU_FT_TO_M3: float = 1.0 / M3_TO_CU_FT
 
 # ─────────────────────────────────────────────
 # ENGINE METADATA
@@ -229,6 +231,9 @@ PARKING_MIN_WIDTH_M: float = 2.5
 PARKING_MIN_LENGTH_M: float = 5.0
 PARKING_DEFAULT_AREA_SQM: float = 15.0      # ~161 sqft
 PARKING_CLEARANCE_M: float = 0.5
+PARKING_FIXED_WIDTH_M: float = 3.0          # 2.5m clear + 0.5m clearance margin
+PARKING_FIXED_LENGTH_M: float = 5.5         # 5.0m clear + 0.5m clearance margin
+PARKING_FIXED_AREA_SQM: float = 16.5        # 3.0m x 5.5m = 16.5 sqm (~177 sqft)
 
 # ─────────────────────────────────────────────
 # DOOR DEFAULTS

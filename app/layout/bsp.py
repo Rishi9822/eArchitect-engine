@@ -296,7 +296,7 @@ def recursive_bsp(
         return node
 
     if len(rooms) == 1 or depth >= MAX_BSP_DEPTH:
-        rooms_sorted = sorted(rooms, key=lambda r: (r.priority, -r.min_area_sqm))
+        rooms_sorted = sorted(rooms, key=lambda r: (-r.priority, -r.min_area_sqm))
         node.room = rooms_sorted[0]
         return node
 
@@ -308,7 +308,7 @@ def recursive_bsp(
         return node
 
     # Sort rooms: high-priority / large rooms first
-    sorted_rooms = sorted(rooms, key=lambda r: (r.priority, -r.min_area_sqm))
+    sorted_rooms = sorted(rooms, key=lambda r: (-r.priority, -r.min_area_sqm))
 
     # Split rooms into two groups
     split_idx = max(1, len(sorted_rooms) // 2)

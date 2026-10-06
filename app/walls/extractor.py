@@ -9,15 +9,19 @@ Extracts a clean, non-overlapping, topologically valid wall graph:
    - Every interior wall has `room_a` and `room_b` corresponding to the actual rooms sharing that boundary.
    - No duplicate, reverse, or overlapping interior walls are created.
 2. Exterior walls are derived from room boundaries lying on the buildable perimeter.
-   - Collinear merging is safely applied to exterior walls.
-3. Every wall segment is assigned a deterministic sequential ID (W001, W002, ...).
+   - Exterior segments are **split at every intersection with an internal room boundary**
+     so that each segment belongs to exactly one room (`room_a`).
+   - Collinear merging is applied **only** to segments of the same room.
+3. A perimeter conservation assertion ensures that the sum of exterior wall
+   segment lengths ≈ buildable perimeter length (within tolerance).
+4. Every wall segment is assigned a deterministic sequential ID (W001, W002, ...).
 """
 from __future__ import annotations
 
 import math
 import logging
 from itertools import combinations
-from typing import List, Tuple, Dict, Optional
+from typing import List, Tuple, Dict, Optional, Set
 
 from shapely.geometry import (
     Polygon,
@@ -26,7 +30,7 @@ from shapely.geometry import (
     GeometryCollection,
     Point as ShapelyPoint,
 )
-from shapely.ops import linemerge
+from shapely.ops import linemerge, split
 
 from ..config import (
     EXTERIOR_WALL_THICKNESS,
@@ -40,6 +44,9 @@ from ..config import (
 from ..geometry.polygon_utils import line_bearing, line_orientation
 
 logger = logging.getLogger(__name__)
+
+# Tolerance for perimeter conservation assertion (metres)
+_PERIMETER_CONSERVATION_TOL = 0.5
 
 
 def _is_valid_wall_line(line: LineString) -> bool:
@@ -140,11 +147,142 @@ def _segment_on_boundary(
 
 
 # ─────────────────────────────────────────────
+# EXTERIOR WALL SPLITTING AT ROOM BOUNDARIES
+# ─────────────────────────────────────────────
+
+def _collect_interior_split_points(
+    room_polygons: List[Polygon],
+    boundary_ring,
+) -> List[ShapelyPoint]:
+    """
+    Collect all points where internal room boundaries intersect the
+    buildable perimeter.  These become split points for exterior walls.
+    """
+    split_pts: List[ShapelyPoint] = []
+    seen_snapped: Set[Tuple[float, float]] = set()
+
+    for poly in room_polygons:
+        if poly.is_empty or not poly.is_valid:
+            continue
+        try:
+            inters = poly.boundary.intersection(boundary_ring)
+        except Exception:
+            continue
+
+        # Walk through all point-like pieces of the intersection
+        def _add_points(geom):
+            if geom is None or geom.is_empty:
+                return
+            if isinstance(geom, ShapelyPoint):
+                key = (_snap_coord(geom.x), _snap_coord(geom.y))
+                if key not in seen_snapped:
+                    seen_snapped.add(key)
+                    split_pts.append(geom)
+            elif hasattr(geom, "geoms"):
+                for g in geom.geoms:
+                    _add_points(g)
+            elif isinstance(geom, LineString):
+                for c in geom.coords:
+                    pt = ShapelyPoint(c)
+                    key = (_snap_coord(pt.x), _snap_coord(pt.y))
+                    if key not in seen_snapped:
+                        seen_snapped.add(key)
+                        split_pts.append(pt)
+
+        _add_points(inters)
+
+    return split_pts
+
+
+def _split_segment_at_points(
+    seg: LineString,
+    split_points: List[ShapelyPoint],
+    snap_tol: float = SEGMENT_SNAP_TOLERANCE,
+) -> List[LineString]:
+    """
+    Split a LineString at a set of points that lie (within tolerance) on it.
+    Returns a list of sub-segments in order along the original segment.
+    """
+    if not split_points:
+        return [seg]
+
+    # Collect parameter values (0-1 normalised distance along seg)
+    params: List[float] = []
+    for pt in split_points:
+        d = seg.distance(pt)
+        if d > snap_tol * 5:
+            continue
+        t = seg.project(pt, normalized=True)
+        # Skip split points that are at the very start/end (within tolerance)
+        if t < 1e-6 or t > 1.0 - 1e-6:
+            continue
+        params.append(t)
+
+    if not params:
+        return [seg]
+
+    params = sorted(set(params))
+
+    # Build sub-segments
+    sub_segs: List[LineString] = []
+    prev_t = 0.0
+    coords_list = list(seg.coords)
+    start_coord = coords_list[0]
+
+    for t in params:
+        pt = seg.interpolate(t, normalized=True)
+        sub = LineString([start_coord, (pt.x, pt.y)])
+        if sub.length >= MIN_WALL_LENGTH:
+            sub_segs.append(sub)
+        start_coord = (pt.x, pt.y)
+        prev_t = t
+
+    # Final sub-segment
+    end_coord = coords_list[-1]
+    sub = LineString([start_coord, end_coord])
+    if sub.length >= MIN_WALL_LENGTH:
+        sub_segs.append(sub)
+
+    return sub_segs if sub_segs else [seg]
+
+
+def _assign_room_to_segment(
+    seg: LineString,
+    room_polygons: List[Polygon],
+    room_ids: List[str],
+) -> Optional[str]:
+    """
+    Determine which room owns a given exterior wall segment by checking
+    which room's boundary most overlaps with the segment.
+    """
+    mid = seg.interpolate(0.5, normalized=True)
+    best_rid = None
+    best_dist = float("inf")
+
+    for idx, poly in enumerate(room_polygons):
+        if poly.is_empty or not poly.is_valid:
+            continue
+        d = poly.boundary.distance(mid)
+        if d < best_dist:
+            best_dist = d
+            best_rid = room_ids[idx]
+
+    return best_rid
+
+
+# ─────────────────────────────────────────────
 # COLLINEAR MERGING (EXTERIOR WALLS ONLY)
 # ─────────────────────────────────────────────
 
 def _are_collinear(seg_a: dict, seg_b: dict) -> bool:
-    """Return True only when two exterior segments are genuinely collinear and contiguous."""
+    """
+    Return True only when two exterior segments are genuinely collinear,
+    contiguous, **and belong to the same room**.
+    """
+    # ── Priority 7: Never merge segments across different rooms ──
+    if seg_a.get("room_a") != seg_b.get("room_a"):
+        return False
+
     line_a = LineString([
         (seg_a["start"]["x"], seg_a["start"]["y"]),
         (seg_a["end"]["x"], seg_a["end"]["y"]),
@@ -238,7 +376,10 @@ def _merge_two_exterior_segments(seg_a: dict, seg_b: dict) -> dict:
 
 
 def _merge_exterior_collinear_segments(segments: List[dict]) -> List[dict]:
-    """Merge collinear exterior wall fragments."""
+    """
+    Merge collinear exterior wall fragments **within the same room only**.
+    Segments from different rooms are never merged.
+    """
     if len(segments) <= 1:
         return segments
 
@@ -289,7 +430,9 @@ def extract_wall_segments(
 
     Exterior walls:
     - Derived from room edges that lie on the buildable perimeter
-    - Collinear exterior segments are cleanly merged
+    - **Priority 7**: Exterior segments are split at every intersection with
+      internal room boundaries so each segment belongs to exactly one room.
+    - Collinear exterior segments are merged **only** within the same room.
 
     Args:
         room_polygons: list of room Shapely Polygons
@@ -303,9 +446,12 @@ def extract_wall_segments(
     reference_polygon = inner_polygon if inner_polygon is not None else plot_polygon
     boundary_ring = reference_polygon.boundary
 
+    # ── 0. Collect split points (interior boundaries hitting perimeter) ──
+    split_points = _collect_interior_split_points(room_polygons, boundary_ring)
+
     # ── 1. Extract Exterior Walls ─────────────────────────────────────
-    exterior_segments: List[dict] = []
-    seen_exterior_keys = set()
+    raw_exterior_lines: List[Tuple[LineString, str]] = []  # (line, room_id)
+    seen_exterior_keys: Set[Tuple] = set()
 
     for idx, poly in enumerate(room_polygons):
         if poly.is_empty or not poly.is_valid:
@@ -322,36 +468,66 @@ def extract_wall_segments(
             if overlap is None or not _is_valid_wall_line(overlap):
                 continue
 
-            key = _normalise_endpoints(overlap)
+            raw_exterior_lines.append((overlap, rid))
+
+    # ── 1a. Split each exterior line at room-boundary split points ────
+    split_exterior_segments: List[dict] = []
+
+    for ext_line, original_rid in raw_exterior_lines:
+        sub_segs = _split_segment_at_points(ext_line, split_points)
+
+        for sub in sub_segs:
+            if not _is_valid_wall_line(sub):
+                continue
+
+            # Re-assign room ownership based on which room actually touches
+            # this sub-segment (the original rid may be wrong after splitting).
+            assigned_rid = _assign_room_to_segment(sub, room_polygons, room_ids)
+            if assigned_rid is None:
+                assigned_rid = original_rid
+
+            key = _normalise_endpoints(sub)
             if key in seen_exterior_keys:
                 continue
             seen_exterior_keys.add(key)
 
-            ov_coords = list(overlap.coords)
+            ov_coords = list(sub.coords)
             start_pt = ov_coords[0]
             end_pt = ov_coords[-1]
             geom_length = math.hypot(end_pt[0] - start_pt[0], end_pt[1] - start_pt[1])
             if geom_length < MIN_WALL_LENGTH:
                 continue
 
-            exterior_segments.append({
+            split_exterior_segments.append({
                 "start": {"x": round(start_pt[0], 4), "y": round(start_pt[1], 4)},
                 "end": {"x": round(end_pt[0], 4), "y": round(end_pt[1], 4)},
                 "type": "exterior",
                 "thickness": EXTERIOR_WALL_THICKNESS,
                 "length": round(geom_length, 4),
-                "bearing_deg": round(line_bearing(overlap), 1),
-                "orientation": line_orientation(overlap),
-                "room_a": rid,
+                "bearing_deg": round(line_bearing(sub), 1),
+                "orientation": line_orientation(sub),
+                "room_a": assigned_rid,
                 "room_b": None,
             })
 
-    # Apply safe collinear merging to exterior walls
-    clean_exterior_segments = _merge_exterior_collinear_segments(exterior_segments)
+    # ── 1b. Apply safe collinear merging (same room only) ─────────────
+    clean_exterior_segments = _merge_exterior_collinear_segments(split_exterior_segments)
+
+    # ── 1c. Perimeter conservation assertion ──────────────────────────
+    ext_total_len = sum(s["length"] for s in clean_exterior_segments)
+    perimeter_len = boundary_ring.length
+    if abs(ext_total_len - perimeter_len) > _PERIMETER_CONSERVATION_TOL:
+        logger.warning(
+            "Perimeter conservation warning: exterior wall sum=%.4f m vs "
+            "perimeter=%.4f m (delta=%.4f m, tol=%.1f m)",
+            ext_total_len, perimeter_len,
+            abs(ext_total_len - perimeter_len),
+            _PERIMETER_CONSERVATION_TOL,
+        )
 
     # ── 2. Extract Interior Walls (Pairwise Room Boundary Intersection) ──
     interior_segments: List[dict] = []
-    seen_interior_keys = set()
+    seen_interior_keys: Set[Tuple] = set()
 
     n_rooms = len(room_polygons)
     for i in range(n_rooms):

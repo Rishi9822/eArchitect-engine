@@ -17,6 +17,7 @@ from ..config import (
     DEFAULT_FLOOR_HEIGHT_M,
     EXTERIOR_WALL_THICKNESS,
     INTERIOR_WALL_THICKNESS,
+    M3_TO_CU_FT,
 )
 
 logger = logging.getLogger(__name__)
@@ -31,19 +32,25 @@ def compute_measurements(
     windows: List[dict],
     floor_height_m: float = DEFAULT_FLOOR_HEIGHT_M,
     corridor_polygons: Optional[List[Polygon]] = None,
+    carpet_area_sqm: Optional[float] = None,
+    super_built_up_area_sqm: Optional[float] = None,
+    total_wall_footprint_area_sqm: Optional[float] = None,
 ) -> dict:
     """
     Compute all estimator-ready geometric measurements.
 
     Args:
-        plot_polygon:      original plot (before setback)
-        inner_polygon:     buildable area (after setback)
-        room_polygons:     list of room Shapely Polygons
-        walls:             list of wall dicts with 'type', 'length'
-        doors:             list of door dicts
-        windows:           list of window dicts
-        floor_height_m:    floor-to-ceiling height
-        corridor_polygons: optional list of corridor Shapely Polygons
+        plot_polygon:                  original plot (before setback)
+        inner_polygon:                 buildable area (after setback)
+        room_polygons:                 list of room Shapely Polygons
+        walls:                         list of wall dicts with 'type', 'length'
+        doors:                         list of door dicts
+        windows:                       list of window dicts
+        floor_height_m:                floor-to-ceiling height
+        corridor_polygons:             optional list of corridor Shapely Polygons
+        carpet_area_sqm:               optional pre-calculated net carpet area
+        super_built_up_area_sqm:       optional pre-calculated super built-up area
+        total_wall_footprint_area_sqm: optional pre-calculated wall footprint area
 
     Returns:
         dict of measurements in both metric and imperial.
@@ -59,6 +66,10 @@ def compute_measurements(
     # Built-up area includes rooms + corridors
     built_up_area_sqm = room_area_sqm + corridor_area_sqm
 
+    # Super built-up defaults to total built-up if not provided
+    if super_built_up_area_sqm is None:
+        super_built_up_area_sqm = built_up_area_sqm
+
     ext_wall_length = sum(
         w.get("length", 0) for w in walls if w.get("type") == "exterior"
     )
@@ -69,6 +80,22 @@ def compute_measurements(
 
     ext_wall_area = ext_wall_length * floor_height_m
     int_wall_area = int_wall_length * floor_height_m
+
+    # Masonry wall volume
+    masonry_wall_volume_m3 = sum(
+        float(w.get("length", 0.0)) * float(w.get("thickness", INTERIOR_WALL_THICKNESS)) * floor_height_m
+        for w in walls
+    )
+    masonry_wall_volume_cuft = masonry_wall_volume_m3 * M3_TO_CU_FT
+
+    # Carpet area and wall footprint fallback
+    if carpet_area_sqm is None:
+        # If not provided, compute an approximation based on wall thicknesses
+        # Deduct half-thickness around boundary of rooms
+        carpet_area_sqm = max(0.0, room_area_sqm - (ext_wall_length * (EXTERIOR_WALL_THICKNESS / 2.0) + int_wall_length * (INTERIOR_WALL_THICKNESS / 2.0)))
+
+    if total_wall_footprint_area_sqm is None:
+        total_wall_footprint_area_sqm = max(0.0, room_area_sqm - carpet_area_sqm)
 
     perimeter = inner_polygon.length
 
@@ -81,6 +108,14 @@ def compute_measurements(
         "room_area_sqft": round(room_area_sqm * SQ_M_TO_SQ_FT, 2),
         "built_up_area_sqm": round(built_up_area_sqm, 4),
         "built_up_area_sqft": round(built_up_area_sqm * SQ_M_TO_SQ_FT, 2),
+        "super_built_up_area_sqm": round(super_built_up_area_sqm, 4),
+        "super_built_up_area_sqft": round(super_built_up_area_sqm * SQ_M_TO_SQ_FT, 2),
+        "carpet_area_sqm": round(carpet_area_sqm, 4),
+        "carpet_area_sqft": round(carpet_area_sqm * SQ_M_TO_SQ_FT, 2),
+        "total_wall_footprint_area_sqm": round(total_wall_footprint_area_sqm, 4),
+        "total_wall_footprint_area_sqft": round(total_wall_footprint_area_sqm * SQ_M_TO_SQ_FT, 2),
+        "masonry_wall_volume_m3": round(masonry_wall_volume_m3, 4),
+        "masonry_wall_volume_cuft": round(masonry_wall_volume_cuft, 2),
         "exterior_wall_length_m": round(ext_wall_length, 4),
         "interior_wall_length_m": round(int_wall_length, 4),
         "total_wall_length_m": round(total_wall_length, 4),

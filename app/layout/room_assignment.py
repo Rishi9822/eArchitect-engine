@@ -77,7 +77,7 @@ def validate_room_assignment(
             result.violations.append(ConstraintViolation(
                 room_id=spec.id,
                 room_type=spec.type,
-                constraint="ROOM_MISSING",
+                constraint="ROOM_COMPLETENESS",
                 required=1,
                 actual=0,
                 message=f"Room '{spec.id}' ({spec.type}) was not placed",
@@ -101,7 +101,7 @@ def validate_room_assignment(
         if not poly.is_valid or poly.is_empty:
             result.violations.append(ConstraintViolation(
                 room_id=room_id, room_type=spec.type,
-                constraint="GEOMETRY_INVALID",
+                constraint="ROOM_VALID_GEOMETRY",
                 required=0, actual=0,
                 message=f"Room '{room_id}' has invalid geometry",
             ))
@@ -114,7 +114,7 @@ def validate_room_assignment(
             deficit_pct = (1 - area_sqm / spec.min_area_sqm) * 100
             violation = ConstraintViolation(
                 room_id=room_id, room_type=spec.type,
-                constraint="ROOM_AREA_INFEASIBLE",
+                constraint="ROOM_AREA_MINIMUM",
                 required=round(spec.min_area_sqm, 4),
                 actual=round(area_sqm, 4),
                 message=(
@@ -133,21 +133,26 @@ def validate_room_assignment(
         if spec.min_width_m > 0:
             md = min_dimension(poly)
             if md < spec.min_width_m * 0.8:
-                result.warnings.append(ConstraintViolation(
+                v = ConstraintViolation(
                     room_id=room_id, room_type=spec.type,
-                    constraint="ROOM_DIMENSION_INFEASIBLE",
+                    constraint="ROOM_DIMENSION_MINIMUM",
                     required=round(spec.min_width_m, 3),
                     actual=round(md, 3),
                     message=(
                         f"Room '{room_id}' min dimension {md:.2f}m "
                         f"below minimum {spec.min_width_m:.2f}m"
                     ),
-                ))
+                )
+                if strict:
+                    result.violations.append(v)
+                    result.valid = False
+                else:
+                    result.warnings.append(v)
 
         # 2d. Aspect ratio check
         ar = aspect_ratio(poly)
         if ar > spec.max_aspect_ratio:
-            result.warnings.append(ConstraintViolation(
+            v = ConstraintViolation(
                 room_id=room_id, room_type=spec.type,
                 constraint="ROOM_ASPECT_RATIO",
                 required=spec.max_aspect_ratio,
@@ -156,23 +161,33 @@ def validate_room_assignment(
                     f"Room '{room_id}' aspect ratio {ar:.2f} "
                     f"exceeds maximum {spec.max_aspect_ratio}"
                 ),
-            ))
+            )
+            if strict:
+                result.violations.append(v)
+                result.valid = False
+            else:
+                result.warnings.append(v)
 
         # 2e. Containment check
         if not inner_polygon.contains(poly):
             # Check how much is outside
             outside = poly.difference(inner_polygon)
             if not outside.is_empty and outside.area > poly.area * 0.05:
-                result.warnings.append(ConstraintViolation(
+                v = ConstraintViolation(
                     room_id=room_id, room_type=spec.type,
-                    constraint="ROOM_OUTSIDE_BOUNDARY",
+                    constraint="ROOM_INSIDE_BOUNDARY",
                     required=0,
                     actual=round(outside.area, 4),
                     message=(
                         f"Room '{room_id}' extends {outside.area:.3f} sqm "
                         f"outside buildable boundary"
                     ),
-                ))
+                )
+                if strict or outside.area > poly.area * 0.15:
+                    result.violations.append(v)
+                    result.valid = False
+                else:
+                    result.warnings.append(v)
 
     # ── 3. Overlap check ─────────────────────────────────────────
     room_ids = list(room_polys.keys())
@@ -192,15 +207,20 @@ def validate_room_assignment(
             overlap_area = intersection.area
             if overlap_area > 0.01:  # >0.01 sqm = real overlap
                 result.overlap_pairs.append((id_a, id_b))
-                result.warnings.append(ConstraintViolation(
+                v = ConstraintViolation(
                     room_id=id_a, room_type="",
-                    constraint="GEOMETRY_OVERLAP",
+                    constraint="ROOM_NO_OVERLAP",
                     required=0,
                     actual=round(overlap_area, 4),
                     message=(
                         f"Rooms '{id_a}' and '{id_b}' overlap by "
                         f"{overlap_area:.3f} sqm"
                     ),
-                ))
+                )
+                if strict or overlap_area > 0.1:
+                    result.violations.append(v)
+                    result.valid = False
+                else:
+                    result.warnings.append(v)
 
     return result

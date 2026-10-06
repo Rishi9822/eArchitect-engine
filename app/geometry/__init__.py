@@ -18,3 +18,4 @@ from .polygon_utils import (
     line_orientation,
 )
 from .measurements import compute_measurements
+from .carpet_area import compute_room_carpet_polygon, compute_layout_carpet_accounting

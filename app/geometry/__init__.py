@@ -16,5 +16,13 @@ from .polygon_utils import (
     polygon_exterior_contact,
     line_bearing,
     line_orientation,
+    get_polygon_internal_angles,
+    is_polygon_orthogonal,
+    min_polygon_internal_angle,
+    compute_inscribed_circle_diameter,
+    get_polygon_edge_bearings,
+    clip_acute_corners,
 )
 from .measurements import compute_measurements
+from .carpet_area import compute_room_carpet_polygon, compute_layout_carpet_accounting
+

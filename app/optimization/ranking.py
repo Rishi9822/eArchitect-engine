@@ -38,9 +38,11 @@ def rank_candidates(
     """
     def sort_key(c: Dict):
         is_valid = c.get("validation", {}).get("valid", True)
+        has_entrance = int(len(c.get("entrances", [])) >= 1)
         score = c.get("score", {}).get("overall", 0.0)
-        # Valid candidates ranked first, then by score descending
-        return (-int(is_valid), -score)
+        # Valid candidates ranked first, then candidates with an entrance, then by score descending
+        return (-int(is_valid), -has_entrance, -score)
+
 
     ranked = sorted(candidates, key=sort_key)
 

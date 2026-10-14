@@ -203,10 +203,7 @@ def compute_circulation_score(
 
     for rid in room_ids:
         rtype = get_rtype(rid)
-        zone = ZONE_MAP.get(rtype, "")
-        if zone == "private" or rtype in ("bedroom", "master_bedroom", "study", "dressing"):
-            private_rooms.add(rid)
-        elif rtype in ("toilet", "bathroom"):
+        if rtype in ("toilet", "bathroom"):
             # Check if attached to a bedroom (only door neighbors are bedroom(s))
             neighbors = graph.get(rid, set()) - {"ENTRANCE"}
             if neighbors:
@@ -222,6 +219,10 @@ def compute_circulation_score(
                 if is_attached and parent_bed:
                     private_rooms.add(rid)
                     attached_toilets[rid] = parent_bed
+        else:
+            zone = ZONE_MAP.get(rtype, "")
+            if zone == "private" or rtype in ("bedroom", "master_bedroom", "study", "dressing"):
+                private_rooms.add(rid)
 
     if not private_rooms:
         privacy_depth = 1.0

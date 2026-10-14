@@ -100,10 +100,14 @@ def classify_door_edge(
     if _matches(DOOR_ADJACENCY_FORBIDDEN, t_a, t_b):
         return float("inf")
 
-    # Both rooms private (and neither is corridor) -> FORBIDDEN
+    # Both rooms private (and neither is corridor/toilet/bathroom) -> FORBIDDEN (e.g. bedroom <-> bedroom)
     zone_a = ZONE_MAP.get(t_a, "")
     zone_b = ZONE_MAP.get(t_b, "")
-    if zone_a == "private" and zone_b == "private" and t_a != "corridor" and t_b != "corridor":
+    if (
+        zone_a == "private" and zone_b == "private"
+        and t_a not in ("corridor", "toilet", "bathroom")
+        and t_b not in ("corridor", "toilet", "bathroom")
+    ):
         return float("inf")
 
     # living <-> bedroom: ACCEPTABLE (3) only if no corridor exists; DISCOURAGED (8) if corridor exists

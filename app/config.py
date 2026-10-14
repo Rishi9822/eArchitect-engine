@@ -94,6 +94,9 @@ MIN_SPLIT_RATIO: float = 0.25             # Never split closer than 25% from edg
 MAX_SPLIT_RATIO: float = 0.75
 BSP_RATIO_SEARCH_STEP: float = 0.05       # Step size when searching for best ratio
 BSP_AREA_TOLERANCE: float = 0.4           # Min fraction of required area for leaf
+MIN_HABITABLE_INSCRIBED_CIRCLE_DIAMETER_M: float = 2.4   # Min inscribed circle diameter for habitable rooms
+ACUTE_CORNER_THRESHOLD_DEG: float = 60.0                 # Corners < 60° treated as acute slivers
+
 
 # ─────────────────────────────────────────────
 # ZONE DEFINITIONS
@@ -109,8 +112,8 @@ ZONE_MAP: Dict[str, str] = {
     "study": "private",
     "dressing": "private",
     "kitchen": "service",
-    "toilet": "service",
-    "bathroom": "service",
+    "toilet": "private",
+    "bathroom": "private",
     "utility": "service",
     "store": "service",
     "parking": "parking",
@@ -273,6 +276,10 @@ DOOR_ADJACENCY_PREFERRED: Set[Tuple[str, str]] = {
     ("living", "dining"),
     ("living", "corridor"),
     ("dining", "kitchen"),
+    ("bedroom", "toilet"),
+    ("master_bedroom", "toilet"),
+    ("bedroom", "bathroom"),
+    ("master_bedroom", "bathroom"),
     ("corridor", "bedroom"),
     ("corridor", "master_bedroom"),
     ("corridor", "toilet"),

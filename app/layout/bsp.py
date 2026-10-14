@@ -46,7 +46,12 @@ from ..geometry.polygon_utils import (
     compute_longest_axis,
     split_polygon,
     find_best_ratio,
+    get_polygon_edge_bearings,
+    clip_acute_corners,
+    min_polygon_internal_angle,
+    get_polygon_internal_angles,
 )
+
 from ..geometry.normalization import ensure_valid
 
 logger = logging.getLogger(__name__)
@@ -103,6 +108,7 @@ def build_room_specs(
     - parking injection if preference is set
     """
     specs: List[RoomSpec] = []
+    seen_type_counts: Dict[str, int] = {}
 
     for req in room_requirements:
         room_type = req["type"].lower()
@@ -111,7 +117,16 @@ def build_room_specs(
 
         count = req.get("count", 1)
         for i in range(count):
+            cur_idx = seen_type_counts.get(room_type, 0)
+            seen_type_counts[room_type] = cur_idx + 1
+
             min_area_sqm = req["min_area_sqm"]
+            room_zone = req.get("zone")
+            if room_zone is None:
+                if room_type in ("toilet", "bathroom") and cur_idx > 0:
+                    room_zone = "private"
+                else:
+                    room_zone = zone
 
             # Use provided min_width/length or fall back to defaults
             min_width_m = req.get("min_width_m", defaults.min_width_ft * FT_TO_M)
@@ -127,7 +142,7 @@ def build_room_specs(
                     id=req.get("id", f"{room_type}_{i}") if count == 1
                        else f"{room_type}_{i}",
                     type=room_type,
-                    zone=zone,
+                    zone=room_zone,
                     min_area_sqm=min_area_sqm,
                     min_width_m=min_width_m,
                     min_length_m=min_length_m,
@@ -237,18 +252,28 @@ def zone_partition(
 
         if forced_axis in ("x", "y"):
             axis = forced_axis
+            candidate_axes = [axis]
         else:
             axis = compute_longest_axis(remainder)
             if prefer_alternate_axis:
                 axis = "x" if axis == "y" else "y"
+            candidate_axes = [axis, "x" if axis == "y" else "y"]
+            edge_bearings = get_polygon_edge_bearings(remainder)
+            if edge_bearings:
+                candidate_axes.extend(edge_bearings)
 
-        best_ratio = find_best_ratio(remainder, axis, fraction)
-        part_a, part_b = split_polygon(remainder, axis, best_ratio)
+        part_a, part_b = None, None
+        for ax in candidate_axes:
+            best_ratio = find_best_ratio(remainder, ax, fraction)
+            part_a, part_b = split_polygon(remainder, ax, best_ratio)
+            if part_a is not None and part_b is not None:
+                break
 
         if part_a is None or part_b is None:
             logger.warning("Zone split failed for '%s'; assigning remainder.", zone)
             zone_polygons[zone] = remainder
             break
+
 
         if flip_sides:
             zone_polygons[zone] = part_b
@@ -332,15 +357,21 @@ def recursive_bsp(
         jitter = rng.uniform(-0.05, 0.05)
         target_ratio = max(MIN_SPLIT_RATIO, min(MAX_SPLIT_RATIO, target_ratio + jitter))
 
-    # Try primary axis first, then alternate
+    # Try primary axis first, then alternate, then edge bearings for irregular polygons
     primary_axis = compute_longest_axis(polygon)
     alt_axis = "x" if primary_axis == "y" else "y"
 
+    candidate_axes = [primary_axis, alt_axis]
+    edge_bearings = get_polygon_edge_bearings(polygon)
+    if edge_bearings:
+        candidate_axes.extend(edge_bearings)
+
     best_split = None
 
-    for axis in [primary_axis, alt_axis]:
+    for axis in candidate_axes:
         best_ratio = find_best_ratio(polygon, axis, target_ratio)
         left_poly, right_poly = split_polygon(polygon, axis, best_ratio)
+
 
         if left_poly is None or right_poly is None:
             continue
@@ -427,6 +458,7 @@ def classify_dead_space(poly: Polygon) -> str:
     if n <= 4:
         vertices = np.array(coords[:-1])
         max_angle = 0.0
+        min_angle = 180.0
         for i in range(n):
             a = vertices[(i - 1) % n]
             b = vertices[i]
@@ -440,8 +472,9 @@ def classify_dead_space(poly: Polygon) -> str:
             cos_angle = np.clip(cos_angle, -1.0, 1.0)
             angle_deg = math.degrees(math.acos(cos_angle))
             max_angle = max(max_angle, angle_deg)
+            min_angle = min(min_angle, angle_deg)
 
-        if max_angle > 120:
+        if max_angle > 120 or min_angle < 60.0:
             return "storage"
 
     if ar > 5.0:
@@ -508,8 +541,6 @@ def generate_bsp_layout(
 
     # Recursive BSP within each zone
     room_leaves: Dict[str, BSPNode] = {}
-    zone_used_polygons: List[Polygon] = []
-
     for zone, zone_poly in zone_polygons.items():
         zone_rooms = rooms_by_zone.get(zone, [])
         if not zone_rooms:
@@ -519,7 +550,33 @@ def generate_bsp_layout(
         for leaf in leaves:
             if leaf.room is not None:
                 room_leaves[leaf.room.id] = leaf
-                zone_used_polygons.append(leaf.polygon)
+
+    # Priority 9: Acute Corner Handling (<60°)
+    # For any room leaf with corners < 60°, clip the sliver into dead space (storage nook)
+    # or absorb into an adjacent room leaf if compatible.
+    acute_slivers: List[Polygon] = []
+    for room_id, leaf in list(room_leaves.items()):
+        if leaf.polygon and not leaf.polygon.is_empty:
+            clipped_poly, slivers = clip_acute_corners(leaf.polygon, min_angle_deg=60.0)
+            if slivers:
+                leaf.polygon = clipped_poly
+                for sl in slivers:
+                    absorbed = False
+                    for other_id, other_leaf in room_leaves.items():
+                        if other_id != room_id and other_leaf.polygon.touches(sl):
+                            candidate_union = ensure_valid(unary_union([other_leaf.polygon, sl]))
+                            if (
+                                isinstance(candidate_union, Polygon)
+                                and candidate_union.is_valid
+                                and min_polygon_internal_angle(candidate_union) >= 60.0
+                            ):
+                                other_leaf.polygon = candidate_union
+                                absorbed = True
+                                break
+                    if not absorbed:
+                        acute_slivers.append(sl)
+
+    zone_used_polygons = [leaf.polygon for leaf in room_leaves.values()]
 
     # Detect dead spaces
     used_union = unary_union(zone_used_polygons) if zone_used_polygons else None
@@ -535,6 +592,11 @@ def generate_bsp_layout(
             if isinstance(g, Polygon) and g.area >= 0.5:
                 dead_polygons.append(g)
 
+    # Include any unabsorbed acute slivers as dead space (storage nooks)
+    for sl in acute_slivers:
+        if sl.is_valid and sl.area >= 0.1 and not any(sl.intersects(d) and sl.intersection(d).area > 0.9 * sl.area for d in dead_polygons):
+            dead_polygons.append(sl)
+
     # Identify unplaced rooms
     placed_ids = set(room_leaves.keys())
     unplaced = [s for s in specs if s.id not in placed_ids]
@@ -545,3 +607,4 @@ def generate_bsp_layout(
         "dead_polygons": dead_polygons,
         "unplaced_rooms": unplaced,
     }
+

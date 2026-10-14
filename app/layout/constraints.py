@@ -97,7 +97,9 @@ HARD_CONSTRAINTS = [
     "TOILET_NO_VENTILATION",   # Toilet must have window or ventilation path
     "TOILET_VENTILATION",      # Alias / backward compat for toilet ventilation
     "PARKING_EXTERIOR_ACCESS", # Parking must have exterior road access
+    "MIN_ROOM_INSCRIBED_CIRCLE", # Habitable room inscribed circle diameter >= 2.4m
 ]
+
 
 SOFT_PREFERENCES = [
     "ROOM_DIMENSION_MINIMUM",  # Room min width/length
@@ -314,7 +316,11 @@ def check_no_forbidden_doors(doors: List[dict], room_types: Dict[str, str]) -> L
         if not is_forbidden:
             z_a = ZONE_MAP.get(t_a, "")
             z_b = ZONE_MAP.get(t_b, "")
-            if z_a == "private" and z_b == "private" and t_a != "corridor" and t_b != "corridor":
+            if (
+                z_a == "private" and z_b == "private"
+                and t_a not in ("corridor", "toilet", "bathroom")
+                and t_b not in ("corridor", "toilet", "bathroom")
+            ):
                 is_forbidden = True
         if is_forbidden:
             errors.append({
@@ -458,3 +464,38 @@ def check_parking_dimensions(parking_entities: List[dict], strict: bool = False)
                 "details": p,
             })
     return errors
+
+
+def check_min_room_inscribed_circle(
+    room_polygons: Dict[str, Polygon],
+    room_types: Dict[str, str],
+    min_diameter_m: float = 2.4,
+) -> List[dict]:
+    """
+    Habitable rooms must have an inscribed circle diameter >= min_diameter_m (default 2.4m).
+    """
+    from ..geometry.polygon_utils import compute_inscribed_circle_diameter
+    errors = []
+    for room_id, rtype in room_types.items():
+        if rtype.lower() in HABITABLE_ROOM_TYPES:
+            poly = room_polygons.get(room_id)
+            if not poly or poly.is_empty:
+                continue
+            dia = compute_inscribed_circle_diameter(poly)
+            if dia < min_diameter_m - 0.05:
+                errors.append({
+                    "code": "MIN_ROOM_INSCRIBED_CIRCLE",
+                    "severity": "error",
+                    "message": (
+                        f"Habitable room '{room_id}' (type: {rtype}) has inscribed circle diameter {dia:.2f} m, "
+                        f"which is below the required {min_diameter_m:.2f} m."
+                    ),
+                    "details": {
+                        "room_id": room_id,
+                        "room_type": rtype,
+                        "inscribed_circle_diameter_m": round(dia, 3),
+                        "required_diameter_m": min_diameter_m,
+                    },
+                })
+    return errors
+

@@ -62,18 +62,28 @@ def generate(
     elif not private:
         private = []
 
-    if region_a.area >= region_b.area:
-        large_region, small_region = region_a, region_b
+    from ..entrance import _road_side_boundary
+    road_b = _road_side_boundary(inner_polygon, "front", facing)
+    if road_b is not None and not road_b.is_empty:
+        try:
+            contact_a = region_a.intersection(road_b.buffer(0.1)).length
+            contact_b = region_b.intersection(road_b.buffer(0.1)).length
+            if contact_a >= contact_b:
+                pub_region, priv_region = region_a, region_b
+            else:
+                pub_region, priv_region = region_b, region_a
+        except Exception:
+            pub_region, priv_region = (region_a, region_b) if pub_area >= priv_area else (region_b, region_a)
     else:
-        large_region, small_region = region_b, region_a
+        if region_a.area >= region_b.area:
+            large_region, small_region = region_a, region_b
+        else:
+            large_region, small_region = region_b, region_a
 
-    pub_area = sum(s.min_area_sqm for s in public_service)
-    priv_area = sum(s.min_area_sqm for s in private)
-
-    if pub_area >= priv_area:
-        pub_region, priv_region = large_region, small_region
-    else:
-        pub_region, priv_region = small_region, large_region
+        if pub_area >= priv_area:
+            pub_region, priv_region = large_region, small_region
+        else:
+            pub_region, priv_region = small_region, large_region
 
     room_leaves: Dict[str, BSPNode] = {}
     zone_polygons: Dict[str, Polygon] = {}

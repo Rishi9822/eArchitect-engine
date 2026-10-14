@@ -98,13 +98,18 @@ def generate_windows(
             needed_area = 0.0
         elif is_habitable:
             needed_area = room_poly.area * 0.10
-            window_height = 1.2
             base_width = defaults.default_window_width_m
+            total_ext_len = sum(e.length for e in ext_edges)
+            if total_ext_len < (needed_area / 1.2) + 0.5:
+                window_height = min(1.8, max(1.2, round(needed_area / max(0.9, total_ext_len - 0.4), 2)))
+            else:
+                window_height = 1.2
             needed_width = needed_area / window_height
             window_type = "standard"
-            sill_height = DEFAULT_SILL_HEIGHT_M
+            sill_height = 0.6 if window_height > 1.4 else DEFAULT_SILL_HEIGHT_M
             max_windows = max(2 if natural_light_priority else 1, math.ceil(needed_width / base_width))
             window_width = base_width
+
         elif room_type == "kitchen":
             window_width = defaults.default_window_width_m
             window_height = 1.2

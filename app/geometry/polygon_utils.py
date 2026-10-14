@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import math
 import logging
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Union
 
 from shapely.geometry import Polygon, LineString, MultiPolygon
-from shapely.ops import split, unary_union
+from shapely.ops import split, unary_union, polylabel
 
 from ..config import (
     MIN_POLYGON_AREA_SQM,
@@ -117,10 +117,15 @@ def compute_longest_axis(polygon: Polygon) -> str:
     return "y" if width > height else "x"
 
 
-def build_split_line(polygon: Polygon, axis: str, ratio: float) -> LineString:
+def build_split_line(polygon: Polygon, axis: Union[str, float], ratio: float) -> LineString:
     """
     Build a LineString that bisects the polygon's bounding box
-    at the given ratio along the chosen axis.
+    at the given ratio along the chosen axis or bearing angle.
+
+    Args:
+        polygon: Polygon to split
+        axis: 'x' (horizontal cut), 'y' (vertical cut), or float (bearing angle in degrees 0-360)
+        ratio: fraction along the perpendicular axis [0..1]
     """
     minx, miny, maxx, maxy = polygon.bounds
     pad = max(maxx - minx, maxy - miny) * 2
@@ -128,16 +133,45 @@ def build_split_line(polygon: Polygon, axis: str, ratio: float) -> LineString:
     if axis == "y":
         split_x = minx + ratio * (maxx - minx)
         return LineString([(split_x, miny - pad), (split_x, maxy + pad)])
-    else:
+    elif axis == "x":
         split_y = miny + ratio * (maxy - miny)
         return LineString([(minx - pad, split_y), (maxx + pad, split_y)])
+    else:
+        # axis represents a bearing angle in degrees (0-360)
+        try:
+            bearing_deg = float(axis)
+        except (ValueError, TypeError):
+            split_y = miny + ratio * (maxy - miny)
+            return LineString([(minx - pad, split_y), (maxx + pad, split_y)])
+
+        bearing_rad = math.radians(bearing_deg)
+        # Vector along bearing: 0° = North (+Y), 90° = East (+X)
+        dx = math.sin(bearing_rad)
+        dy = math.cos(bearing_rad)
+        # Normal vector perpendicular to bearing direction
+        nx = -dy
+        ny = dx
+
+        coords = list(polygon.exterior.coords)
+        projs = [x * nx + y * ny for x, y in coords]
+        min_p = min(projs)
+        max_p = max(projs)
+        target_p = min_p + ratio * (max_p - min_p)
+
+        # Base point on the split plane
+        p0_x = target_p * nx
+        p0_y = target_p * ny
+        return LineString([
+            (p0_x - pad * dx, p0_y - pad * dy),
+            (p0_x + pad * dx, p0_y + pad * dy),
+        ])
 
 
 def split_polygon(
-    polygon: Polygon, axis: str, ratio: float
+    polygon: Polygon, axis: Union[str, float], ratio: float
 ) -> Tuple[Optional[Polygon], Optional[Polygon]]:
     """
-    Split a polygon along the given axis at the given ratio.
+    Split a polygon along the given axis or bearing angle at the given ratio.
 
     Returns two polygons (left/bottom, right/top) or (None, None) on failure.
     """
@@ -156,8 +190,16 @@ def split_polygon(
         # Sort by coordinate for deterministic ordering
         if axis == "y":
             parts.sort(key=lambda g: g.centroid.x)
-        else:
+        elif axis == "x":
             parts.sort(key=lambda g: g.centroid.y)
+        else:
+            try:
+                bearing_rad = math.radians(float(axis))
+                nx = -math.cos(bearing_rad)
+                ny = math.sin(bearing_rad)
+                parts.sort(key=lambda g: g.centroid.x * nx + g.centroid.y * ny)
+            except Exception:
+                parts.sort(key=lambda g: (g.centroid.x, g.centroid.y))
 
         # Merge extra fragments with nearest part
         if len(parts) > 2:
@@ -174,7 +216,7 @@ def split_polygon(
 
 def find_best_ratio(
     polygon: Polygon,
-    axis: str,
+    axis: Union[str, float],
     target_ratio: float,
     max_aspect: float = MAX_ASPECT_RATIO,
 ) -> float:
@@ -197,6 +239,7 @@ def find_best_ratio(
             return ratio
 
     return 0.5
+
 
 
 # ─────────────────────────────────────────────
@@ -268,3 +311,207 @@ def line_orientation(line: LineString, tolerance_deg: float = 10.0) -> str:
     if abs(norm - 90) < tolerance_deg:
         return "horizontal"
     return "diagonal"
+
+
+# ─────────────────────────────────────────────
+# PRIORITY 9: IRREGULAR PLOT & ANGLE HELPERS
+# ─────────────────────────────────────────────
+
+def get_polygon_internal_angles(poly: Polygon) -> List[float]:
+    """
+    Compute internal angles in degrees for all vertices of a polygon.
+    Returns angles in degrees (in [0, 360)).
+    For a rectangle, all internal angles are 90.0°.
+    """
+    if poly is None or poly.is_empty:
+        return []
+    coords = list(poly.exterior.coords)
+    if coords and coords[0] == coords[-1]:
+        coords = coords[:-1]
+    if len(coords) < 3:
+        return []
+
+    # Ensure counter-clockwise ordering
+    p = Polygon(coords)
+    if not p.exterior.is_ccw:
+        coords = coords[::-1]
+
+    n = len(coords)
+    angles = []
+    for i in range(n):
+        x_prev, y_prev = coords[(i - 1) % n]
+        x_curr, y_curr = coords[i]
+        x_next, y_next = coords[(i + 1) % n]
+
+        v_in_x = x_curr - x_prev
+        v_in_y = y_curr - y_prev
+        v_out_x = x_next - x_curr
+        v_out_y = y_next - y_curr
+
+        cross = v_in_x * v_out_y - v_in_y * v_out_x
+        dot = v_in_x * v_out_x + v_in_y * v_out_y
+        turn_angle_rad = math.atan2(cross, dot)
+        internal_angle = 180.0 - math.degrees(turn_angle_rad)
+        angles.append(internal_angle)
+
+    return angles
+
+
+def is_polygon_orthogonal(poly: Polygon, tolerance_deg: float = 1.0) -> bool:
+    """
+    Check if a polygon is orthogonal (all non-collinear vertices are right angles 90° or 270°).
+    """
+    if poly is None or poly.is_empty:
+        return True
+    angles = get_polygon_internal_angles(poly)
+    if not angles:
+        return True
+    for ang in angles:
+        is_right = (
+            abs(ang - 90.0) <= tolerance_deg
+            or abs(ang - 180.0) <= tolerance_deg
+            or abs(ang - 270.0) <= tolerance_deg
+        )
+        if not is_right:
+            return False
+    return True
+
+
+def min_polygon_internal_angle(poly: Polygon, ignore_collinear: bool = True) -> float:
+    """
+    Return the minimum internal angle of the polygon in degrees.
+    For an orthogonal polygon / rectangle, returns 90.0.
+    """
+    if poly is None or poly.is_empty:
+        return 90.0
+    angles = get_polygon_internal_angles(poly)
+    if not angles:
+        return 90.0
+    if ignore_collinear:
+        non_collinear = [a for a in angles if abs(a - 180.0) > 1.0]
+        if non_collinear:
+            return round(min(non_collinear), 2)
+    return round(min(angles), 2)
+
+
+def compute_inscribed_circle_diameter(poly: Polygon, tolerance: float = 0.05) -> float:
+    """
+    Compute maximum inscribed circle diameter using Shapely polylabel.
+    """
+    try:
+        if poly is None or poly.is_empty:
+            return 0.0
+        pole = polylabel(poly, tolerance=tolerance)
+        radius = poly.boundary.distance(pole)
+        return max(0.0, 2.0 * radius)
+    except Exception:
+        return min_dimension(poly)
+
+
+def get_polygon_edge_bearings(polygon: Polygon, tolerance_deg: float = 5.0) -> List[float]:
+    """
+    Extract unique non-orthogonal edge bearings from polygon exterior.
+    Bearings are normalized to [0, 180) degrees.
+    Excludes bearings within tolerance_deg of 0° (vertical) and 90° (horizontal).
+    """
+    edges = polygon_edges(polygon)
+    bearings: List[float] = []
+    for edge in edges:
+        b = line_bearing(edge) % 180.0
+        is_ortho = (
+            b < tolerance_deg
+            or b > (180.0 - tolerance_deg)
+            or abs(b - 90.0) < tolerance_deg
+        )
+        if not is_ortho:
+            if not any(abs(b - existing) < tolerance_deg for existing in bearings):
+                bearings.append(round(b, 2))
+    return bearings
+
+
+def clip_acute_corners(
+    poly: Polygon, min_angle_deg: float = 60.0, max_cut_m: float = 1.5
+) -> Tuple[Polygon, List[Polygon]]:
+    """
+    Identify acute corners (< min_angle_deg) of a polygon and clip small
+    triangular slivers from them.
+
+    Returns:
+        (clipped_polygon, list_of_slivers)
+    """
+    if poly is None or poly.is_empty:
+        return poly, []
+
+    coords = list(poly.exterior.coords)
+    if coords and coords[0] == coords[-1]:
+        coords = coords[:-1]
+    if len(coords) < 3:
+        return poly, []
+
+    # Ensure counter-clockwise
+    p = Polygon(coords)
+    if not p.exterior.is_ccw:
+        coords = coords[::-1]
+
+    current_poly = poly
+    slivers: List[Polygon] = []
+
+    n = len(coords)
+    for i in range(n):
+        x_prev, y_prev = coords[(i - 1) % n]
+        x_curr, y_curr = coords[i]
+        x_next, y_next = coords[(i + 1) % n]
+
+        v_in_x = x_curr - x_prev
+        v_in_y = y_curr - y_prev
+        v_out_x = x_next - x_curr
+        v_out_y = y_next - y_curr
+
+        cross = v_in_x * v_out_y - v_in_y * v_out_x
+        dot = v_in_x * v_out_x + v_in_y * v_out_y
+        turn_angle_rad = math.atan2(cross, dot)
+        internal_angle = 180.0 - math.degrees(turn_angle_rad)
+
+        if 1.0 < internal_angle < min_angle_deg:
+            # Edge vectors from current point to previous and next vertices
+            dx_prev = x_prev - x_curr
+            dy_prev = y_prev - y_curr
+            dx_next = x_next - x_curr
+            dy_next = y_next - y_curr
+
+            l_prev = math.hypot(dx_prev, dy_prev)
+            l_next = math.hypot(dx_next, dy_next)
+            if l_prev < 1e-4 or l_next < 1e-4:
+                continue
+
+            u_prev_x = dx_prev / l_prev
+            u_prev_y = dy_prev / l_prev
+            u_next_x = dx_next / l_next
+            u_next_y = dy_next / l_next
+
+            # Cut distance proportional to edge length
+            d = min(max_cut_m, l_prev * 0.35, l_next * 0.35)
+            if d < 0.3:
+                continue
+
+            pt_prev_cut = (x_curr + u_prev_x * d, y_curr + u_prev_y * d)
+            pt_next_cut = (x_curr + u_next_x * d, y_curr + u_next_y * d)
+
+            sliver = Polygon([(x_curr, y_curr), pt_prev_cut, pt_next_cut])
+            if sliver.is_valid and sliver.area > 0.05:
+                diff = current_poly.difference(sliver)
+                if isinstance(diff, Polygon) and diff.is_valid and diff.area >= current_poly.area * 0.7:
+                    current_poly = diff
+                    slivers.append(sliver)
+                elif isinstance(diff, MultiPolygon):
+                    parts = sorted(
+                        [g for g in diff.geoms if isinstance(g, Polygon)],
+                        key=lambda g: g.area,
+                        reverse=True,
+                    )
+                    if parts and parts[0].area >= current_poly.area * 0.7:
+                        current_poly = parts[0]
+                        slivers.append(sliver)
+
+    return ensure_valid(current_poly), slivers
+

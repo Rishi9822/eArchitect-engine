@@ -56,6 +56,9 @@ from ..geometry.polygon_utils import (
     max_dimension,
     polygon_exterior_contact,
     polygons_share_boundary,
+    is_polygon_orthogonal,
+    min_polygon_internal_angle,
+    compute_inscribed_circle_diameter,
 )
 from ..geometry.measurements import compute_measurements
 from ..geometry.carpet_area import compute_layout_carpet_accounting
@@ -69,7 +72,9 @@ from ..layout.room_assignment import validate_room_assignment
 from ..layout.constraints import (
     check_feasibility,
     check_natural_light_habitable,
+    check_min_room_inscribed_circle,
 )
+
 from ..layout.entrance import generate_entrance
 from ..layout.doors import generate_doors, _matches
 from ..layout.windows import generate_windows
@@ -158,7 +163,11 @@ def _build_room_output(
         "super_built_up_area_sqm": round(sb_area_sqm, 4),
         "super_built_up_area_sqft": round(sb_area_sqft, 2),
         "wall_footprint_area_sqm": round(w_fp_sqm, 4),
+        "is_orthogonal": is_polygon_orthogonal(polygon),
+        "min_internal_angle_deg": round(min_polygon_internal_angle(polygon), 2),
+        "inscribed_circle_diameter_m": round(compute_inscribed_circle_diameter(polygon), 3),
     }
+
 
 
 def _process_single_candidate(
@@ -529,6 +538,7 @@ def _process_single_candidate(
         "NO_FORBIDDEN_DOORS",
         "HABITABLE_ROOM_WINDOW",
         "NATURAL_LIGHT_HABITABLE",
+        "MIN_ROOM_INSCRIBED_CIRCLE",
         "TOILET_NO_VENTILATION",
         "TOILET_VENTILATION",
         "PARKING_EXTERIOR_ACCESS",
@@ -557,7 +567,11 @@ def _process_single_candidate(
         if not is_forbidden:
             zone_a = ZONE_MAP.get(t_a, "")
             zone_b = ZONE_MAP.get(t_b, "")
-            if zone_a == "private" and zone_b == "private" and t_a != "corridor" and t_b != "corridor":
+            if (
+                zone_a == "private" and zone_b == "private"
+                and t_a not in ("corridor", "toilet", "bathroom")
+                and t_b not in ("corridor", "toilet", "bathroom")
+            ):
                 is_forbidden = True
         if is_forbidden:
             validation_errors.append({
@@ -589,6 +603,12 @@ def _process_single_candidate(
     validation_errors.extend(
         check_natural_light_habitable(room_polygons, room_types, windows_raw)
     )
+
+    # ── Hard Gate 3c: Habitable room inscribed circle >= 2.4m ─────
+    validation_errors.extend(
+        check_min_room_inscribed_circle(room_polygons, room_types)
+    )
+
 
     # ── Hard Gate 4: Toilets must have a window or ventilation path ─
     for room_id, rtype in room_types.items():
@@ -631,6 +651,18 @@ def _process_single_candidate(
                 ),
                 "details": {"parking_id": p["id"]},
             })
+
+    # ── Hard Gate 6: Circulation connected ────────────────────────
+    if not circulation_data.get("connected", True):
+        validation_errors.append({
+            "code": "CIRCULATION_CONNECTED",
+            "severity": "error",
+            "message": "One or more rooms are unreachable from the entrance via the door graph.",
+            "details": {
+                "reachable_rooms": circulation_data.get("reachable_rooms", 0),
+                "total_rooms": circulation_data.get("total_rooms", 0),
+            },
+        })
 
     is_candidate_valid = assignment_validation.valid and len(validation_errors) == 0
 
@@ -749,7 +781,11 @@ def generate_layout_response(
                 "preferred_aspect_ratio": req.preferred_aspect_ratio or defaults.preferred_aspect_ratio,
                 "max_aspect_ratio": defaults.max_aspect_ratio,
                 "priority": req.priority if req.priority is not None else 50,
-                "zone": req.zone,
+                "zone": (
+                    req.zone
+                    if req.zone is not None
+                    else ("private" if i > 0 and req.type.lower() in ("toilet", "bathroom") else None)
+                ),
                 "requires_exterior_wall": (
                     req.exterior_wall_required
                     if req.exterior_wall_required is not None

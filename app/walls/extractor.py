@@ -449,42 +449,32 @@ def extract_wall_segments(
     # ── 0. Collect split points (interior boundaries hitting perimeter) ──
     split_points = _collect_interior_split_points(room_polygons, boundary_ring)
 
-    # ── 1. Extract Exterior Walls ─────────────────────────────────────
-    raw_exterior_lines: List[Tuple[LineString, str]] = []  # (line, room_id)
+    # ── 1. Extract Exterior Walls by partitioning boundary_ring ─────────
+    split_exterior_segments: List[dict] = []
     seen_exterior_keys: Set[Tuple] = set()
 
-    for idx, poly in enumerate(room_polygons):
-        if poly.is_empty or not poly.is_valid:
+    if hasattr(boundary_ring, "geoms"):
+        boundary_edges = []
+        for line in boundary_ring.geoms:
+            c = list(line.coords)
+            for k in range(len(c) - 1):
+                boundary_edges.append(LineString([c[k], c[k + 1]]))
+    else:
+        c = list(boundary_ring.coords)
+        boundary_edges = [LineString([c[k], c[k + 1]]) for k in range(len(c) - 1)]
+
+    for b_edge in boundary_edges:
+        if b_edge.length < MIN_WALL_LENGTH:
             continue
-        rid = room_ids[idx]
-        coords = list(poly.exterior.coords)
-
-        for k in range(len(coords) - 1):
-            edge = LineString([coords[k], coords[k + 1]])
-            if edge.length < MIN_WALL_LENGTH:
-                continue
-
-            overlap = _segment_on_boundary(edge, boundary_ring)
-            if overlap is None or not _is_valid_wall_line(overlap):
-                continue
-
-            raw_exterior_lines.append((overlap, rid))
-
-    # ── 1a. Split each exterior line at room-boundary split points ────
-    split_exterior_segments: List[dict] = []
-
-    for ext_line, original_rid in raw_exterior_lines:
-        sub_segs = _split_segment_at_points(ext_line, split_points)
+        sub_segs = _split_segment_at_points(b_edge, split_points)
 
         for sub in sub_segs:
             if not _is_valid_wall_line(sub):
                 continue
 
-            # Re-assign room ownership based on which room actually touches
-            # this sub-segment (the original rid may be wrong after splitting).
             assigned_rid = _assign_room_to_segment(sub, room_polygons, room_ids)
             if assigned_rid is None:
-                assigned_rid = original_rid
+                assigned_rid = room_ids[0] if room_ids else "unknown"
 
             key = _normalise_endpoints(sub)
             if key in seen_exterior_keys:

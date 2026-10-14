@@ -74,6 +74,9 @@ class RoomOutput(BaseModel):
     super_built_up_area_sqm: float = 0.0
     super_built_up_area_sqft: float = 0.0
     wall_footprint_area_sqm: float = 0.0
+    is_orthogonal: bool = True
+    min_internal_angle_deg: float = 90.0
+    inscribed_circle_diameter_m: float = 0.0
 
 
 # ─────────────────────────────────────────────

@@ -186,8 +186,12 @@ def compute_layout_carpet_accounting(
     for room_id, rdata in per_room.items():
         rdata["super_built_up_area_sqm"] = rdata["built_up_area_sqm"] * loading_ratio
 
-    # 5. Wall footprint area: all room wall deductions + dead spaces
-    total_wall_footprint_sqm = total_room_wall_fp + total_dead_sqm
+    # 5. Wall footprint area: all room wall deductions + dead spaces and unassigned slivers
+    if inner_polygon is not None and not inner_polygon.is_empty:
+        unassigned_remainder = max(0.0, inner_polygon.area - (total_room_gross_sqm + total_corridor_sqm))
+        total_wall_footprint_sqm = total_room_wall_fp + unassigned_remainder
+    else:
+        total_wall_footprint_sqm = total_room_wall_fp + total_dead_sqm
 
     # 6. Masonry wall volume
     wall_volume_m3 = 0.0

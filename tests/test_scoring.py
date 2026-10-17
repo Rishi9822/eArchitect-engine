@@ -13,13 +13,15 @@ class TestUtilizationScoring:
         inner = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
         rooms = [inner]  # Room fills entire area
         score = _score_buildable_utilization(rooms, inner)
-        assert abs(score - 1.0) < 0.01
+        # 100% fill now scores ~0.925 (plateau at 75-95%, slight penalty above)
+        assert abs(score - 0.925) < 0.01
 
     def test_half_utilization(self):
         inner = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
         room = Polygon([(0, 0), (5, 0), (5, 10), (0, 10)])  # Half
         score = _score_buildable_utilization([room], inner)
-        assert abs(score - 0.5) < 0.05
+        # 50% fill scores 0.5/0.75 ≈ 0.667
+        assert abs(score - 0.667) < 0.05
 
 
 class TestBuildingCoverage:

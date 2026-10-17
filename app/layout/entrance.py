@@ -34,6 +34,7 @@ ENTRANCE_ROOM_PRIORITY: Dict[str, int] = {
     "living":   2,
     "corridor": 3,
     "dining":   4,
+    "verandah": 5,
 }
 
 # Room types that are NEVER allowed to host the main entrance.
@@ -104,15 +105,30 @@ def _road_side_boundary(
     Return a merged LineString representing all boundary edges of
     inner_polygon that face the requested road side.
 
+    Uses true outward normal pointing away from inner_polygon.
     Returns None if no suitable edges exist.
     """
     lo, hi = _side_to_bearing_range(side, facing)
     road_edges = []
 
     for edge in polygon_edges(inner_polygon):
-        bearing = line_bearing(edge)
-        edge_normal = (bearing + 90) % 360
-        if _bearing_in_range(edge_normal, lo, hi) or _bearing_in_range(bearing, lo, hi):
+        coords = list(edge.coords)
+        dx = coords[-1][0] - coords[0][0]
+        dy = coords[-1][1] - coords[0][1]
+        seg_len = math.hypot(dx, dy)
+        if seg_len < 1e-6:
+            continue
+        tx = dx / seg_len
+        ty = dy / seg_len
+        n1 = (ty, -tx)
+        n2 = (-ty, tx)
+        mx = (coords[0][0] + coords[-1][0]) / 2.0
+        my = (coords[0][1] + coords[-1][1]) / 2.0
+        probe = ShapelyPoint(mx + 0.05 * n1[0], my + 0.05 * n1[1])
+        outward_n = n2 if inner_polygon.contains(probe) else n1
+        outward_bearing = math.degrees(math.atan2(outward_n[0], outward_n[1])) % 360
+
+        if _bearing_in_range(outward_bearing, lo, hi):
             road_edges.append(edge)
 
     if not road_edges:
@@ -255,15 +271,30 @@ def find_entrance_wall(
         )
         return None
 
-    # ── Compute door bearing (inward-facing from road boundary) ───
+    # ── Compute door bearing (outward normal of owning wall) ───
     try:
         if hasattr(road_boundary, "geoms"):
-            # MultiLineString — use the segment closest to our position
             pos_pt = ShapelyPoint(position["x"], position["y"])
             road_seg = min(road_boundary.geoms, key=lambda g: g.distance(pos_pt))
         else:
             road_seg = road_boundary
-        bearing = line_bearing(road_seg)
+
+        coords = list(road_seg.coords)
+        dx = coords[-1][0] - coords[0][0]
+        dy = coords[-1][1] - coords[0][1]
+        seg_len = math.hypot(dx, dy)
+        if seg_len > 1e-6:
+            tx = dx / seg_len
+            ty = dy / seg_len
+            n1 = (ty, -tx)
+            n2 = (-ty, tx)
+            mx = (coords[0][0] + coords[-1][0]) / 2.0
+            my = (coords[0][1] + coords[-1][1]) / 2.0
+            probe = ShapelyPoint(mx + 0.05 * n1[0], my + 0.05 * n1[1])
+            outward_n = n2 if best_room_poly.contains(probe) else n1
+            bearing = math.degrees(math.atan2(outward_n[0], outward_n[1])) % 360
+        else:
+            bearing = 0.0
     except Exception:
         bearing = 0.0
 

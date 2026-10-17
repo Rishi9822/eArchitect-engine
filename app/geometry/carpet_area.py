@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Dict, List, Optional, Tuple
 
-from shapely.geometry import Polygon, LineString, MultiPolygon
+from shapely.geometry import Polygon, LineString, MultiPolygon, GeometryCollection
 from shapely.ops import unary_union
 
 from ..config import (
@@ -95,6 +95,17 @@ def compute_room_carpet_polygon(
     else:
         carpet = room_poly
 
+    if isinstance(carpet, GeometryCollection):
+        polys = [g for g in carpet.geoms if isinstance(g, (Polygon, MultiPolygon))]
+        flat = []
+        for p in polys:
+            if isinstance(p, MultiPolygon):
+                flat.extend(p.geoms)
+            else:
+                flat.append(p)
+        valid_geoms = [g for g in flat if not g.is_empty and g.is_valid and g.area > 0.01]
+        carpet = max(valid_geoms, key=lambda g: g.area) if valid_geoms else Polygon()
+
     if isinstance(carpet, MultiPolygon):
         valid_geoms = [g for g in carpet.geoms if not g.is_empty and g.is_valid and g.area > 0.01]
         carpet = max(valid_geoms, key=lambda g: g.area) if valid_geoms else Polygon()
@@ -102,9 +113,12 @@ def compute_room_carpet_polygon(
     if carpet.is_empty or carpet.area <= 0.0 or not carpet.is_valid:
         # Fallback to mild buffer if difference erased the room
         carpet = room_poly.buffer(-0.02)
-        if isinstance(carpet, MultiPolygon):
+        if isinstance(carpet, GeometryCollection):
+            flat = [g for g in carpet.geoms if isinstance(g, Polygon) and not g.is_empty]
+            carpet = max(flat, key=lambda g: g.area) if flat else room_poly
+        elif isinstance(carpet, MultiPolygon):
             carpet = max(carpet.geoms, key=lambda g: g.area) if carpet.geoms else room_poly
-        if carpet.is_empty:
+        if carpet.is_empty or not hasattr(carpet, "exterior"):
             carpet = room_poly
 
     wall_footprint = max(0.0, room_poly.area - carpet.area)

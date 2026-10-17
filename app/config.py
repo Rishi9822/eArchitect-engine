@@ -112,8 +112,8 @@ ZONE_MAP: Dict[str, str] = {
     "study": "private",
     "dressing": "private",
     "kitchen": "service",
-    "toilet": "private",
-    "bathroom": "private",
+    "toilet": "service",
+    "bathroom": "service",
     "utility": "service",
     "store": "service",
     "parking": "parking",
@@ -126,6 +126,25 @@ ZONE_RATIOS: Dict[str, float] = {
     "private": 0.40,
     "service": 0.18,
     "parking": 0.07,
+}
+
+# ─────────────────────────────────────────────
+# ROOM SIZE CAPS (MIN & MAX IN SQ METRES)
+# ─────────────────────────────────────────────
+ROOM_AREA_CAPS_SQM: Dict[str, Tuple[float, float]] = {
+    "toilet": (3.0, 6.0),
+    "bathroom": (3.0, 6.0),
+    "kitchen": (7.0, 14.0),
+    "dining": (8.0, 16.0),
+    "bedroom": (11.0, 20.0),
+    "master_bedroom": (13.0, 25.0),
+    "living": (14.0, 30.0),
+    "parking": (15.0, 25.0),
+    "utility": (3.0, 8.0),
+    "store": (3.0, 8.0),
+    "study": (8.0, 16.0),
+    "foyer": (3.0, 10.0),
+    "balcony": (3.0, 10.0),
 }
 
 # ─────────────────────────────────────────────

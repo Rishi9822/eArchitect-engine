@@ -95,8 +95,19 @@ from ..api.errors import (
 logger = logging.getLogger(__name__)
 
 
-def _poly_to_coords(poly: Polygon) -> List[dict]:
+def _poly_to_coords(poly) -> List[dict]:
     """Convert polygon exterior to list of {x, y} dicts."""
+    if poly is None or poly.is_empty:
+        return []
+    if not hasattr(poly, "exterior"):
+        if hasattr(poly, "geoms"):
+            cand_polys = [g for g in poly.geoms if hasattr(g, "exterior") and not g.is_empty]
+            if cand_polys:
+                poly = max(cand_polys, key=lambda g: g.area)
+            else:
+                return []
+        else:
+            return []
     return [
         {"x": round(x, 4), "y": round(y, 4)}
         for x, y in list(poly.exterior.coords)[:-1]
@@ -145,6 +156,7 @@ def _build_room_output(
         "area_sqft": round(area_sqft, 2),
         "area_sqm": round(area_sqm, 4),
         "polygon": _poly_to_coords(polygon),
+        "boundary": _poly_to_coords(polygon),
         "centroid": {"x": round(centroid.x, 4), "y": round(centroid.y, 4)},
         "aspect_ratio": round(aspect_ratio(polygon), 3),
         "zone": zone,
@@ -497,6 +509,10 @@ def _process_single_candidate(
     )
     timings["scoring_ms"] = (time.perf_counter() - t0) * 1000
 
+    entrances_output = []
+    if entrance_data:
+        entrances_output.append(entrance_data)
+
     # ── Measurements ─────────────────────────────────────────────
     measurements_data = compute_measurements(
         plot_polygon, inner_polygon, room_polygon_list,
@@ -505,11 +521,22 @@ def _process_single_candidate(
         carpet_area_sqm=carpet_accounting["total_carpet_area_sqm"],
         super_built_up_area_sqm=carpet_accounting["total_super_built_up_area_sqm"],
         total_wall_footprint_area_sqm=carpet_accounting["total_wall_footprint_area_sqm"],
+        entrances=entrances_output,
     )
 
-    # ── Metrics ──────────────────────────────────────────────────
+    # ── Area Closure & Metrics ───────────────────────────────────
     total_room_area = sum(p.area for p in room_polygon_list)
     total_corridor_area = sum(c.get("area_sqm", 0.0) for c in corridors_data)
+    closure_gap = inner_polygon.area - (total_room_area + total_corridor_area)
+    if closure_gap > 0.01:
+        dead_spaces_raw.append({
+            "id": f"DS{len(dead_spaces_raw) + 1:03d}",
+            "area_sqm": round(closure_gap, 4),
+            "area_sqft": round(closure_gap * SQ_M_TO_SQ_FT, 2),
+            "polygon": [],
+            "reason": "unassigned_buildable_gap",
+        })
+
     total_built_up_area = total_room_area + total_corridor_area
     dead_space_area = sum(d["area_sqm"] for d in dead_spaces_raw)
 
@@ -684,11 +711,6 @@ def _process_single_candidate(
                 "details": p,
             })
 
-    # ── Assemble candidate ───────────────────────────────────────
-    entrances_output = []
-    if entrance_data:
-        entrances_output.append(entrance_data)
-
     circulation_breakdown = (
         circulation_data.get("circulation_breakdown")
         or circulation_data.get("breakdown")
@@ -698,6 +720,7 @@ def _process_single_candidate(
         "id": candidate_id,
         "strategy": strategy,
         "variation": variation,
+        "is_fallback": candidate_result.get("is_fallback", False),
         "rooms": rooms_output,
         "corridors": corridors_data,
         "walls": walls_raw,
@@ -886,6 +909,8 @@ def generate_layout_response(
     # Plot output
     plot_output = {
         "boundary": _poly_to_coords(plot_polygon),
+        "polygon": _poly_to_coords(plot_polygon),
+        "points": _poly_to_coords(plot_polygon),
         "area_sqft": round(plot_polygon.area * SQ_M_TO_SQ_FT, 2),
         "area_sqm": round(plot_polygon.area, 4),
         "facing": request.plot.facing,
@@ -895,6 +920,7 @@ def generate_layout_response(
     # Buildable area output
     buildable_output = {
         "boundary": _poly_to_coords(inner_polygon),
+        "polygon": _poly_to_coords(inner_polygon),
         "area_sqft": round(inner_polygon.area * SQ_M_TO_SQ_FT, 2),
         "area_sqm": round(inner_polygon.area, 4),
         "setback_m": request.plot.setback,

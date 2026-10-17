@@ -45,11 +45,12 @@ def generate(
     )
 
     if corridor_poly is None or region_a is None or region_b is None:
-        # Fallback: generate without corridor
+        # Fallback: cannot build defining element -> mark fallback
         from .open_plan import generate as open_plan_gen
         result = open_plan_gen(inner_polygon, specs, rng, facing)
-        result["strategy"] = "central_corridor"
-        result["variation"] = variation
+        result["strategy"] = "fallback"
+        result["is_fallback"] = True
+        result["variation"] = f"{variation}_fallback"
         return result
 
     # Classify rooms by zone for region assignment

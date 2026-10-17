@@ -15,6 +15,7 @@ Priority 1 Implementation:
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from typing import List, Dict, Optional, Tuple, Set
 
 from shapely.geometry import Polygon, LineString
@@ -238,6 +239,11 @@ def generate_doors(
     tree_edges: List[dict] = []
     parking_kitchen_used = False
 
+    bedroom_count = sum(1 for rid in room_ids if room_types.get(rid, "").lower() in ("bedroom", "master_bedroom"))
+    toilet_count = sum(1 for rid in room_ids if room_types.get(rid, "").lower() in ("toilet", "bathroom"))
+    attached_to_bedroom: Dict[str, Set[str]] = defaultdict(set)
+    public_toilet_connected = False
+
     while len(visited) < len(room_ids):
         best_edge = None
         best_key = (float("inf"), 0.0)  # (cost, -length)
@@ -245,12 +251,38 @@ def generate_doors(
         for edge in candidate_edges:
             u, v = edge["id_a"], edge["id_b"]
             if (u in visited and v not in visited) or (v in visited and u not in visited):
+                ta = edge["type_a"].lower()
+                tb = edge["type_b"].lower()
+
                 # Service access check: allow at most ONE parking <-> kitchen door
-                is_parking_kitchen = tuple(sorted([edge["type_a"], edge["type_b"]])) == ("kitchen", "parking")
+                is_parking_kitchen = tuple(sorted([ta, tb])) == ("kitchen", "parking")
                 if is_parking_kitchen and parking_kitchen_used:
                     continue
 
-                key = (edge["cost"], -edge["length"])
+                # Toilet allocation check: Max 1 attached toilet per bedroom unless bedrooms < toilets
+                bed_id, toi_id = None, None
+                if ta in ("bedroom", "master_bedroom") and tb in ("toilet", "bathroom"):
+                    bed_id, toi_id = edge["id_a"], edge["id_b"]
+                elif tb in ("bedroom", "master_bedroom") and ta in ("toilet", "bathroom"):
+                    bed_id, toi_id = edge["id_b"], edge["id_a"]
+
+                if bed_id and toi_id:
+                    if bedroom_count >= toilet_count and len(attached_to_bedroom[bed_id]) >= 1:
+                        # Bedroom already has an attached toilet; prevent hoarding
+                        continue
+
+                # Common toilet prioritization: at least one toilet must be reachable from public/corridor
+                is_public_toilet = (
+                    (ta in ("toilet", "bathroom") and (tb in ("living", "foyer", "dining", "corridor") or ZONE_MAP.get(tb) == "public")) or
+                    (tb in ("toilet", "bathroom") and (ta in ("living", "foyer", "dining", "corridor") or ZONE_MAP.get(ta) == "public"))
+                )
+
+                cost = edge["cost"]
+                if is_public_toilet and not public_toilet_connected:
+                    # Prioritize common toilet edge to guarantee public reachability
+                    cost = min(cost, 1.0)
+
+                key = (cost, -edge["length"])
                 if key < best_key:
                     best_key = key
                     best_edge = edge
@@ -263,8 +295,22 @@ def generate_doors(
         visited.add(new_node)
         tree_edges.append(best_edge)
 
-        if tuple(sorted([best_edge["type_a"], best_edge["type_b"]])) == ("kitchen", "parking"):
+        eta = best_edge["type_a"].lower()
+        etb = best_edge["type_b"].lower()
+
+        if tuple(sorted([eta, etb])) == ("kitchen", "parking"):
             parking_kitchen_used = True
+
+        if eta in ("bedroom", "master_bedroom") and etb in ("toilet", "bathroom"):
+            attached_to_bedroom[best_edge["id_a"]].add(best_edge["id_b"])
+        elif etb in ("bedroom", "master_bedroom") and eta in ("toilet", "bathroom"):
+            attached_to_bedroom[best_edge["id_b"]].add(best_edge["id_a"])
+
+        if (
+            (eta in ("toilet", "bathroom") and (etb in ("living", "foyer", "dining", "corridor") or ZONE_MAP.get(etb) == "public")) or
+            (etb in ("toilet", "bathroom") and (eta in ("living", "foyer", "dining", "corridor") or ZONE_MAP.get(eta) == "public"))
+        ):
+            public_toilet_connected = True
 
     # Check for unreached rooms (e.g. toilet with only forbidden edges)
     # Note: Parking is an exterior vehicular space with an outside shutter;
@@ -279,10 +325,28 @@ def generate_doors(
             "Rooms unreachable via architecturally valid doors: %s", unreached
         )
 
-    # ── 4. Add Convenience Edges (At Most 2, Cost == 1.0 Only) ────────────
+    # ── 4. Add Convenience Edges & Common Toilet Enforcement ──────────────
     tree_edge_set = {
         tuple(sorted([e["id_a"], e["id_b"]])) for e in tree_edges
     }
+
+    # If public toilet is not yet connected, find an edge from public/corridor to any toilet
+    extra_required_edges = []
+    if toilet_count > 0 and not public_toilet_connected:
+        for e in candidate_edges:
+            pair = tuple(sorted([e["id_a"], e["id_b"]]))
+            if pair in tree_edge_set:
+                continue
+            ta = e["type_a"].lower()
+            tb = e["type_b"].lower()
+            if (
+                (ta in ("toilet", "bathroom") and (tb in ("living", "foyer", "dining", "corridor") or ZONE_MAP.get(tb) == "public")) or
+                (tb in ("toilet", "bathroom") and (ta in ("living", "foyer", "dining", "corridor") or ZONE_MAP.get(ta) == "public"))
+            ):
+                extra_required_edges.append(e)
+                tree_edge_set.add(pair)
+                public_toilet_connected = True
+                break
 
     convenience_candidates = [
         e for e in candidate_edges
@@ -291,7 +355,7 @@ def generate_doors(
     # Sort by wall length descending
     convenience_candidates.sort(key=lambda e: -e["length"])
 
-    selected_convenience = convenience_candidates[:MAX_CONVENIENCE_DOORS]
+    selected_convenience = extra_required_edges + convenience_candidates[:MAX_CONVENIENCE_DOORS]
     all_selected_edges = tree_edges + selected_convenience
 
     # ── 5. Generate Door Dicts ────────────────────────────────────────────

@@ -3,6 +3,19 @@ Shared polygon utility functions.
 
 Geometry helpers used across BSP, wall extraction, and architectural
 element placement.
+
+UNIFIED ANGLE & BEARING CONVENTION:
+- Azimuth / Compass bearing in degrees in [0.0, 360.0).
+- 0° = North (+Y axis)
+- 90° = East (+X axis)
+- 180° = South (-Y axis)
+- 270° = West (-X axis)
+- Angles increase clockwise from North (+Y).
+- Wall bearing: compass angle along the line segment from start to end:
+    dx = x2 - x1, dy = y2 - y1
+    bearing = math.degrees(math.atan2(dx, dy)) % 360
+- Outward normal: unit vector perpendicular to the wall segment pointing
+  away from the room interior / building interior.
 """
 from __future__ import annotations
 

@@ -196,8 +196,13 @@ def compute_circulation_score(
         return base if base in ZONE_MAP else rid.lower()
 
     # ── 1. privacy_depth (0.30) ───────────────────────────────────────────
-    # Fraction of private rooms (bedroom, master_bedroom, toilet attached to bedroom)
-    # whose shortest path from entrance does NOT pass through another bedroom or kitchen.
+    # Fraction of private rooms whose shortest path from entrance does NOT
+    # pass through another bedroom or kitchen.
+    # Also verifies that:
+    # (a) Every bedroom has an attached toilet OR a common toilet reachable without
+    #     passing through another bedroom.
+    # (b) At least one toilet is reachable from the public zone or corridor.
+    # (c) Max 1 attached toilet per bedroom unless bedrooms < toilets.
     private_rooms: Set[str] = set()
     attached_toilets: Dict[str, str] = {}  # toilet_id -> parent_bedroom_id
 
@@ -224,6 +229,66 @@ def compute_circulation_score(
             if zone == "private" or rtype in ("bedroom", "master_bedroom", "study", "dressing"):
                 private_rooms.add(rid)
 
+    bedrooms = [r for r in room_ids if get_rtype(r) in ("bedroom", "master_bedroom")]
+    toilets = [r for r in room_ids if get_rtype(r) in ("toilet", "bathroom")]
+    public_rooms = [r for r in room_ids if ZONE_MAP.get(get_rtype(r)) == "public" or get_rtype(r) in ("living", "dining", "foyer", "lobby")]
+
+    def _can_reach_without(start: str, target: str, forbidden_intermediate: Set[str]) -> bool:
+        if start == target:
+            return True
+        q = deque([[start]])
+        visited_nodes = {start}
+        while q:
+            path_nodes = q.popleft()
+            curr = path_nodes[-1]
+            if curr == target:
+                return True
+            for nbr in graph.get(curr, set()):
+                if nbr == "ENTRANCE":
+                    continue
+                if nbr not in visited_nodes:
+                    if nbr in forbidden_intermediate and nbr != target:
+                        continue
+                    visited_nodes.add(nbr)
+                    q.append(path_nodes + [nbr])
+        return False
+
+    # Check (a): each bedroom can reach at least one toilet without passing through another bedroom
+    bedroom_toilet_ok: Dict[str, bool] = {}
+    for b in bedrooms:
+        other_beds = set(bedrooms) - {b}
+        bedroom_toilet_ok[b] = any(_can_reach_without(b, t, other_beds) for t in toilets) if toilets else True
+
+    # Check (b): at least one toilet reachable from public zone or corridor without passing through a bedroom
+    # If all toilets are attached (only neighbor is a bedroom), skip the penalty —
+    # there's no standalone/common toilet in the program to reach.
+    attached_toilets_set: set = set()
+    for t in toilets:
+        nbrs = graph.get(t, set()) - {"ENTRANCE"}
+        bed_nbrs = [n for n in nbrs if get_rtype(n) in ("bedroom", "master_bedroom")]
+        if len(bed_nbrs) == 1 and len(nbrs) == 1:
+            attached_toilets_set.add(t)
+
+    all_toilets_attached = toilets and (attached_toilets_set == set(toilets))
+
+    if all_toilets_attached or not public_rooms or not toilets:
+        public_toilet_ok = True
+    else:
+        public_toilet_ok = any(
+            _can_reach_without(p, t, set(bedrooms))
+            for p in public_rooms for t in toilets
+        )
+
+    # Check (c): max 1 attached toilet per bedroom unless bedrooms < toilets
+    attached_per_bed: Dict[str, int] = defaultdict(int)
+    for t in toilets:
+        nbrs = graph.get(t, set()) - {"ENTRANCE"}
+        bed_nbrs = [n for n in nbrs if get_rtype(n) in ("bedroom", "master_bedroom")]
+        if len(bed_nbrs) == 1 and len(nbrs) == 1:
+            attached_per_bed[bed_nbrs[0]] += 1
+
+    toilet_hoarding = (len(bedrooms) >= len(toilets)) and any(count > 1 for count in attached_per_bed.values())
+
     if not private_rooms:
         privacy_depth = 1.0
     else:
@@ -245,7 +310,12 @@ def compute_circulation_score(
             if not violates:
                 satisfied += 1
 
-        privacy_depth = satisfied / len(private_rooms)
+        base_privacy = satisfied / len(private_rooms)
+        bed_ratio = (sum(bedroom_toilet_ok.values()) / len(bedrooms)) if (bedrooms and toilets) else 1.0
+        pub_factor = 1.0 if public_toilet_ok else 0.5
+        hoard_factor = 0.7 if toilet_hoarding else 1.0
+
+        privacy_depth = base_privacy * bed_ratio * pub_factor * hoard_factor
 
     # ── 2. public_private_separation (0.25) ───────────────────────────────
     # Mean distance (in door hops) from entrance to private rooms minus mean
@@ -294,8 +364,12 @@ def compute_circulation_score(
     # ── 4. service_isolation (0.15) ───────────────────────────────────────
     # Kitchen and toilets do NOT lie on the shortest path between entrance and
     # any bedroom.
+    # Sanitary service access must not violate bedroom privacy (public zone must
+    # not traverse bedrooms to reach service toilets; bedrooms must not traverse
+    # other bedrooms to reach toilets).
     # Score: 1.0 if zero violations; subtract 0.35 per violation down to 0.0.
     bedrooms = [r for r in room_ids if get_rtype(r) in ("bedroom", "master_bedroom")]
+    toilets = [r for r in room_ids if get_rtype(r) in ("toilet", "bathroom")]
 
     service_violations = 0
     for b in bedrooms:
@@ -308,6 +382,14 @@ def compute_circulation_score(
             if ntype in ("kitchen", "toilet", "bathroom"):
                 service_violations += 1
                 break
+
+    # Sanitary service isolation violations:
+    if toilets and not public_toilet_ok:
+        service_violations += 1
+    if toilets and bedrooms:
+        service_violations += len([b for b, ok in bedroom_toilet_ok.items() if not ok])
+    if toilet_hoarding:
+        service_violations += 1
 
     service_isolation = max(0.0, 1.0 - 0.35 * service_violations)
 

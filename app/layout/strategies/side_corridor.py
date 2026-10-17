@@ -44,10 +44,12 @@ def generate(
     )
 
     if corridor_poly is None or main_region is None:
+        # Fallback: cannot build defining element -> mark fallback
         from .open_plan import generate as open_plan_gen
         result = open_plan_gen(inner_polygon, specs, rng, facing)
-        result["strategy"] = "side_corridor"
-        result["variation"] = variation
+        result["strategy"] = "fallback"
+        result["is_fallback"] = True
+        result["variation"] = f"{variation}_fallback"
         return result
 
     # BSP on the main region

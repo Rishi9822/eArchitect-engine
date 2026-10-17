@@ -29,6 +29,7 @@ from ..config import (
     ZONE_MAP,
     ZONE_ORDER,
     ZONE_RATIOS,
+    ROOM_AREA_CAPS_SQM,
     MAX_BSP_DEPTH,
     MIN_POLYGON_AREA_SQM,
     MAX_ASPECT_RATIO,
@@ -68,6 +69,7 @@ class RoomSpec:
     type: str
     zone: str
     min_area_sqm: float
+    max_area_sqm: float = float("inf")
     min_width_m: float = 0.0
     min_length_m: float = 0.0
     preferred_aspect_ratio: float = 2.0
@@ -121,12 +123,15 @@ def build_room_specs(
             seen_type_counts[room_type] = cur_idx + 1
 
             min_area_sqm = req["min_area_sqm"]
+            cap_min, cap_max = ROOM_AREA_CAPS_SQM.get(room_type, (min_area_sqm, min_area_sqm * 2.0))
+            min_area_sqm = max(min_area_sqm, cap_min)
+            max_area_sqm = req.get("max_area_sqm", cap_max)
+            if max_area_sqm < min_area_sqm:
+                max_area_sqm = min_area_sqm * 1.5
+
             room_zone = req.get("zone")
             if room_zone is None:
-                if room_type in ("toilet", "bathroom") and cur_idx > 0:
-                    room_zone = "private"
-                else:
-                    room_zone = zone
+                room_zone = zone
 
             # Use provided min_width/length or fall back to defaults
             min_width_m = req.get("min_width_m", defaults.min_width_ft * FT_TO_M)
@@ -144,6 +149,7 @@ def build_room_specs(
                     type=room_type,
                     zone=room_zone,
                     min_area_sqm=min_area_sqm,
+                    max_area_sqm=max_area_sqm,
                     min_width_m=min_width_m,
                     min_length_m=min_length_m,
                     preferred_aspect_ratio=preferred_ar,
@@ -166,6 +172,7 @@ def build_room_specs(
                     type="parking",
                     zone="parking",
                     min_area_sqm=PARKING_DEFAULT_AREA_SQM,
+                    max_area_sqm=25.0,
                     min_width_m=2.5,
                     min_length_m=5.0,
                     preferred_aspect_ratio=2.5,
@@ -186,20 +193,25 @@ def _compute_zone_target_areas(
 ) -> Dict[str, float]:
     """
     Compute target area for each zone proportional to the total
-    minimum room area requirement for that zone.
+    room area requirement for that zone, capped by maximum allowable room sizes.
     """
     zone_required: Dict[str, float] = {}
+    zone_max: Dict[str, float] = {}
     total_required = 0.0
 
     for zone, specs in rooms_by_zone.items():
         zone_required[zone] = sum(s.min_area_sqm for s in specs)
+        zone_max[zone] = sum(getattr(s, "max_area_sqm", s.min_area_sqm * 2.0) for s in specs)
         total_required += zone_required[zone]
 
     if total_required <= 0:
         return {z: plot_area * ZONE_RATIOS.get(z, 0.1) for z in rooms_by_zone}
 
     scale = min(1.0, (plot_area * 0.95) / total_required)
-    return {zone: req * scale for zone, req in zone_required.items()}
+    targets = {}
+    for zone, req in zone_required.items():
+        targets[zone] = min(req * scale, zone_max.get(zone, req * scale))
+    return targets
 
 
 def zone_partition(
@@ -322,7 +334,32 @@ def recursive_bsp(
 
     if len(rooms) == 1 or depth >= MAX_BSP_DEPTH:
         rooms_sorted = sorted(rooms, key=lambda r: (-r.priority, -r.min_area_sqm))
-        node.room = rooms_sorted[0]
+        target_room = rooms_sorted[0]
+        max_cap = getattr(target_room, "max_area_sqm", float("inf"))
+        # If room area exceeds its max cap by at least 3.0 m2, carve off excess into utility, store, or verandah
+        if polygon.area > max_cap + 3.0 and depth < MAX_BSP_DEPTH + 2:
+            ratio = min(0.85, max(0.15, max_cap / polygon.area))
+            axis = compute_longest_axis(polygon)
+            part_a, part_b = split_polygon(polygon, axis, ratio)
+            if part_a is not None and part_b is not None:
+                node.left = BSPNode(polygon=part_a, depth=depth + 1, room=target_room)
+                aux_type = "utility" if target_room.type in ("kitchen", "dining") else (
+                    "store" if target_room.type in ("bedroom", "master_bedroom") else "verandah"
+                )
+                aux_spec = RoomSpec(
+                    id=f"{aux_type}_{depth}",
+                    type=aux_type,
+                    zone="service" if aux_type in ("utility", "store") else "public",
+                    min_area_sqm=3.0,
+                    max_area_sqm=part_b.area,
+                    min_width_m=1.5,
+                    min_length_m=1.5,
+                    priority=5,
+                )
+                node.right = BSPNode(polygon=part_b, depth=depth + 1, room=aux_spec)
+                return node
+
+        node.room = target_room
         return node
 
     # Check if polygon can host at least one room

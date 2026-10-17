@@ -35,6 +35,7 @@ def compute_measurements(
     carpet_area_sqm: Optional[float] = None,
     super_built_up_area_sqm: Optional[float] = None,
     total_wall_footprint_area_sqm: Optional[float] = None,
+    entrances: Optional[List[dict]] = None,
 ) -> dict:
     """
     Compute all estimator-ready geometric measurements.
@@ -125,7 +126,7 @@ def compute_measurements(
         "floor_area_sqft": round(built_up_area_sqm * SQ_M_TO_SQ_FT, 2),
         "roof_area_sqm": round(built_up_area_sqm, 4),
         "roof_area_sqft": round(built_up_area_sqm * SQ_M_TO_SQ_FT, 2),
-        "total_door_count": len(doors),
+        "total_door_count": len(doors) + (len(entrances) if entrances else 0),
         "total_window_count": len(windows),
         "perimeter_m": round(perimeter, 4),
         "corridor_area_sqm": round(corridor_area_sqm, 4),

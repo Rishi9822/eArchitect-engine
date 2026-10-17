@@ -46,11 +46,23 @@ def _score_buildable_utilization(
     room_polygons: List[Polygon],
     inner_polygon: Polygon,
 ) -> float:
-    """room_area / buildable_area, clamped to [0, 1]."""
+    """
+    Score buildable utilization.
+    Architecturally healthy utilization is 75% to 92%.
+    Stop rewarding 100% fill (which inflates rooms artificially).
+    """
     if inner_polygon.area <= 0:
         return 0.0
     total = sum(p.area for p in room_polygons)
-    return min(1.0, total / inner_polygon.area)
+    ratio = total / inner_polygon.area
+
+    if 0.75 <= ratio <= 0.95:
+        return 1.0
+    elif ratio > 0.95:
+        # Slight discount for cramming/inflating 100% of the buildable envelope
+        return max(0.85, 1.0 - (ratio - 0.95) * 1.5)
+    else:
+        return max(0.0, ratio / 0.75)
 
 
 def _score_building_coverage(
@@ -186,6 +198,8 @@ def score_layout(
         "dead_space_efficiency": round(dead, 4),
         "constraint_compliance": round(compliance, 4),
         "overall": overall,
+        "weights": weights,
+        "score_weights_used": weights,
     }
 
     logger.info(

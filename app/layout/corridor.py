@@ -60,13 +60,14 @@ def generate_central_corridor(
     orientation: Optional[str] = None,
 ) -> Tuple[Optional[Polygon], Optional[Polygon], Optional[Polygon]]:
     """
-    Carve a central corridor strip through the buildable area.
+    Carve a central corridor strip through the buildable area along its
+    principal axis (supporting arbitrary bearings and irregular plots).
 
     Args:
         inner_polygon: buildable area polygon
         facing: plot facing direction
         rng: random number generator
-        orientation: "horizontal" or "vertical" (optional override)
+        orientation: "horizontal", "vertical", or None (auto from principal axis)
 
     Returns:
         (corridor_polygon, region_left, region_right)
@@ -82,47 +83,85 @@ def generate_central_corridor(
     c_width = _corridor_width(inner_polygon.area, rng)
 
     # Corridor area check
-    if c_width * max(width_bb, height_bb) > inner_polygon.area * CORRIDOR_AREA_RATIO * 2:
+    max_dim = max(width_bb, height_bb)
+    if c_width * max_dim > inner_polygon.area * CORRIDOR_AREA_RATIO * 2:
         c_width = MIN_CORRIDOR_WIDTH_M
 
-    # Decide orientation
-    if orientation == "horizontal":
-        is_horizontal = True
-    elif orientation == "vertical":
-        is_horizontal = False
-    else:
-        is_horizontal = width_bb >= height_bb
+    # ── Determine Principal Axis & Corridor Bearing ───────────────────────
+    try:
+        mrr = inner_polygon.minimum_rotated_rectangle
+        mrr_coords = list(mrr.exterior.coords)
+        e1_dx = mrr_coords[1][0] - mrr_coords[0][0]
+        e1_dy = mrr_coords[1][1] - mrr_coords[0][1]
+        e1_len = math.hypot(e1_dx, e1_dy)
+        e1_bearing = math.degrees(math.atan2(e1_dx, e1_dy)) % 180
 
-    if is_horizontal:
-        # Horizontal corridor (runs left-right)
-        center_y = (miny + maxy) / 2
-        offset = rng.uniform(-height_bb * 0.04, height_bb * 0.04)
-        center_y += offset
+        e2_dx = mrr_coords[2][0] - mrr_coords[1][0]
+        e2_dy = mrr_coords[2][1] - mrr_coords[1][1]
+        e2_len = math.hypot(e2_dx, e2_dy)
+        e2_bearing = math.degrees(math.atan2(e2_dx, e2_dy)) % 180
 
-        corridor_box = box(
-            minx - 1, center_y - c_width / 2,
-            maxx + 1, center_y + c_width / 2,
-        )
-    else:
-        # Vertical corridor (runs top-bottom)
-        center_x = (minx + maxx) / 2
-        offset = rng.uniform(-width_bb * 0.04, width_bb * 0.04)
-        center_x += offset
+        # Long axis vs short axis
+        if e1_len >= e2_len:
+            long_bearing, short_bearing = e1_bearing, e2_bearing
+        else:
+            long_bearing, short_bearing = e2_bearing, e1_bearing
 
-        corridor_box = box(
-            center_x - c_width / 2, miny - 1,
-            center_x + c_width / 2, maxy + 1,
-        )
+        if orientation == "horizontal":
+            # Pick bearing closer to East-West (closer to 90°)
+            diff_long = abs((long_bearing % 180) - 90)
+            diff_short = abs((short_bearing % 180) - 90)
+            corridor_bearing = long_bearing if diff_long <= diff_short else short_bearing
+        elif orientation == "vertical":
+            # Pick bearing closer to North-South (closer to 0° or 180°)
+            diff_long = min(long_bearing % 180, 180 - (long_bearing % 180))
+            diff_short = min(short_bearing % 180, 180 - (short_bearing % 180))
+            corridor_bearing = long_bearing if diff_long <= diff_short else short_bearing
+        else:
+            # Auto: align along the longer principal axis
+            corridor_bearing = long_bearing
+    except Exception:
+        # Fallback to axis-aligned bearing
+        if orientation == "vertical":
+            corridor_bearing = 0.0
+        elif orientation == "horizontal":
+            corridor_bearing = 90.0
+        else:
+            corridor_bearing = 90.0 if width_bb >= height_bb else 0.0
+
+    # ── Build Corridor Strip along corridor_bearing ───────────────────────
+    rad = math.radians(corridor_bearing)
+    # Unit direction along corridor: 0° = +Y, 90° = +X
+    d = (math.sin(rad), math.cos(rad))
+    # Unit normal perpendicular to corridor
+    n = (-math.cos(rad), math.sin(rad))
+
+    centroid = inner_polygon.centroid
+    pad = max(max_dim, 50.0) * 2.0
+    jitter = rng.uniform(-max_dim * 0.03, max_dim * 0.03)
+
+    # Strip center line offset by jitter
+    cx = centroid.x + jitter * n[0]
+    cy = centroid.y + jitter * n[1]
+
+    # Quad formed by parallel offset lines
+    half_w = c_width / 2.0
+    p1 = (cx - half_w * n[0] - pad * d[0], cy - half_w * n[1] - pad * d[1])
+    p2 = (cx - half_w * n[0] + pad * d[0], cy - half_w * n[1] + pad * d[1])
+    p3 = (cx + half_w * n[0] + pad * d[0], cy + half_w * n[1] + pad * d[1])
+    p4 = (cx + half_w * n[0] - pad * d[0], cy + half_w * n[1] - pad * d[1])
+
+    corridor_strip = Polygon([p1, p2, p3, p4])
 
     try:
-        corridor_poly = inner_polygon.intersection(corridor_box)
+        corridor_poly = inner_polygon.intersection(corridor_strip)
         if corridor_poly.is_empty or corridor_poly.area < MIN_POLYGON_AREA_SQM:
             return None, None, None
 
         corridor_poly = ensure_valid(corridor_poly)
 
         # Remaining regions
-        remainder = inner_polygon.difference(corridor_box)
+        remainder = inner_polygon.difference(corridor_strip)
         if remainder.is_empty:
             return None, None, None
 
@@ -145,11 +184,8 @@ def generate_central_corridor(
                 )
             return None, None, None
 
-        # Sort deterministically
-        if is_horizontal:
-            parts.sort(key=lambda p: p.centroid.y)
-        else:
-            parts.sort(key=lambda p: p.centroid.x)
+        # Sort deterministically along the normal vector
+        parts.sort(key=lambda g: g.centroid.x * n[0] + g.centroid.y * n[1])
 
         if len(parts) > 2:
             region_a = ensure_valid(unary_union(parts[:len(parts) // 2]))

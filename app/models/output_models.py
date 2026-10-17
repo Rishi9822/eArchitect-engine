@@ -31,6 +31,8 @@ class LayoutMetadata(BaseModel):
 class PlotOutput(BaseModel):
     """Original plot boundary with area and orientation."""
     boundary: List[Coordinate]
+    polygon: Optional[List[Coordinate]] = None
+    points: Optional[List[Coordinate]] = None
     area_sqft: float
     area_sqm: float
     facing: str
@@ -40,6 +42,7 @@ class PlotOutput(BaseModel):
 class BuildableAreaOutput(BaseModel):
     """Setback-applied buildable area."""
     boundary: List[Coordinate]
+    polygon: Optional[List[Coordinate]] = None
     area_sqft: float
     area_sqm: float
     setback_m: float
@@ -56,6 +59,7 @@ class RoomOutput(BaseModel):
     area_sqft: float
     area_sqm: float
     polygon: List[Coordinate]
+    boundary: Optional[List[Coordinate]] = None
     centroid: Coordinate
     aspect_ratio: float
     zone: Literal["public", "private", "service", "parking", "dead"]
@@ -297,6 +301,8 @@ class ScoreBreakdown(BaseModel):
     dead_space_efficiency: float = 0.0
     constraint_compliance: float = 0.0
     overall: float = 0.0
+    weights: Optional[Dict[str, float]] = None
+    score_weights_used: Optional[Dict[str, float]] = None
 
 
 
@@ -329,6 +335,7 @@ class CandidateLayout(BaseModel):
     id: str
     strategy: str
     variation: Optional[str] = None
+    is_fallback: bool = False
     rooms: List[RoomOutput]
     walls: List[WallSegment]
     doors: List[DoorOutput]
@@ -343,6 +350,7 @@ class CandidateLayout(BaseModel):
     score: ScoreBreakdown
     validation: ValidationOutput
     corridors: List[CorridorOutput] = Field(default_factory=list)
+    timings: Optional[Dict[str, float]] = None
     # Populated only for rejected candidates — the first hard-gate error code
     # that caused rejection, or BELOW_DIVERSITY_THRESHOLD for valid-but-pruned.
     rejection_reason: Optional[str] = None
